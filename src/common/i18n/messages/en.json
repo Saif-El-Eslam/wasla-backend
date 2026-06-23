@@ -1,0 +1,29 @@
+{
+  "errors": {
+    "authRequired": "Authentication required.",
+    "invalidSession": "Invalid or expired session.",
+    "internal": "Internal server error.",
+    "invalidCredentials": "Invalid phone number or password.",
+    "phoneAlreadyExists": "This phone number already has an account.",
+    "userNotFound": "User was not found.",
+    "routeNotFound": "Route not found: {{method}} {{path}}.",
+    "validationFailed": "Validation failed.",
+    "otpInvalid": "Invalid verification code.",
+    "otpExpired": "Verification code has expired.",
+    "venueAlreadyExists": "This user already has a venue.",
+    "venueRequired": "Venue setup is required first.",
+    "branchNotFound": "Branch was not found.",
+    "lastActiveBranch": "A venue must have at least one active branch.",
+    "mainBranchRequired": "A venue must have one main branch.",
+    "menuNotFound": "Menu was not found.",
+    "categoryNotFound": "Menu category was not found.",
+    "itemNotFound": "Menu item was not found.",
+    "adminRequired": "Admin access is required.",
+    "invalidBranchAssignment": "One or more assigned branches are invalid.",
+    "branchAssignmentRequired": "At least one branch assignment is required.",
+    "ownerBranchAssignment": "Owner branch assignments cannot be changed from this endpoint."
+  },
+  "logs": {
+    "serverStarted": "Wasla API listening on http://localhost:{{port}}/{{prefix}}"
+  }
+}

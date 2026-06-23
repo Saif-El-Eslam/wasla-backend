@@ -1,0 +1,27 @@
+enum MenuPlan {
+  FREE
+  MENU_STARTER
+  MENU_PRO
+  MENU_MULTI_BRANCH
+  WASLA_COMPLETE
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+}
+
+model Subscription {
+  id                String              @id @default(uuid())
+  venueId           String              @unique
+  plan              MenuPlan            @default(FREE)
+  status            SubscriptionStatus  @default(TRIALING)
+  currentPeriodEnds DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  venue             Venue               @relation(fields: [venueId], references: [id], onDelete: Cascade)
+}

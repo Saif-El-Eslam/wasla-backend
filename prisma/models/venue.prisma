@@ -1,0 +1,68 @@
+enum VenueType {
+  RESTAURANT
+  CAFE
+  BAKERY
+  DESSERT_SHOP
+  FOOD_TRUCK
+  CLOUD_KITCHEN
+  CATERING
+  LOUNGE
+  OTHER
+}
+
+model Venue {
+  id                String          @id @default(uuid())
+  ownerId           String?
+  type              VenueType       @default(RESTAURANT)
+  name              Json
+  slug              String          @unique
+  logoUrl           String?
+  coverUrl          String?
+  phone             String?
+  whatsapp          String?
+  address           Json?
+  googleMapsUrl     String?
+  instagramUrl      String?
+  description       Json?
+  defaultLocale     String          @default("ar")
+  supportedLocales  String[]        @default(["ar", "en"])
+  timezone          String          @default("Africa/Cairo")
+  currency          String          @default("EGP")
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  owner             User?           @relation("VenueOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  users             User[]
+  branches          Branch[]
+  subscription      Subscription?
+  analyticsEvents   AnalyticsEventLog[]
+
+  @@index([ownerId])
+}
+
+model Branch {
+  id                String    @id @default(uuid())
+  venueId           String
+  name              Json
+  slug              String
+  isMain            Boolean   @default(false)
+  active            Boolean   @default(true)
+  logoUrl           String?
+  coverUrl          String?
+  phone             String?
+  whatsapp          String?
+  address           Json?
+  googleMapsUrl     String?
+  instagramUrl      String?
+  openingHours      Json?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  venue             Venue     @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  menu              Menu?
+  userAccesses      UserBranchAccess[]
+  analyticsEvents   AnalyticsEventLog[]
+
+  @@unique([venueId, slug])
+  @@index([venueId, isMain])
+}
