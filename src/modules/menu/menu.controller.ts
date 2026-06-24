@@ -21,7 +21,7 @@ import {
 
 export const getBranchMenuController = asyncHandler(async (req, res) => {
   const menu = await getBranchMenu(req.user, String(req.params.branchId));
-  ok(res, localizeResponse({ menu }, req.locale));
+  ok(res, { menu });
 });
 
 export const createBranchMenuController = asyncHandler(async (req, res) => {

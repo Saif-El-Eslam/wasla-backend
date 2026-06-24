@@ -23,7 +23,7 @@ export const listBranchesController = asyncHandler(async (req, res) => {
 
   if (req.query.view === 'management') {
     const result = await listManagementBranches(req.user);
-    ok(res, localizeResponse(result, req.locale));
+    ok(res, result);
     return;
   }
 
