@@ -13,8 +13,8 @@ export const prisma = new PrismaClient({
   ],
 });
 
-prisma.$on('query', (event) => {
-  console.log(`[db] ${event.duration}ms ${event.query}`);
+prisma.$on('query', (_event) => {
+  // console.log(`[db] ${event.duration}ms ${event.query}`);
 });
 
 prisma.$on('error', (event) => {

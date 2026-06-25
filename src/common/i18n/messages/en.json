@@ -21,7 +21,21 @@
     "adminRequired": "Admin access is required.",
     "invalidBranchAssignment": "One or more assigned branches are invalid.",
     "branchAssignmentRequired": "At least one branch assignment is required.",
-    "ownerBranchAssignment": "Owner branch assignments cannot be changed from this endpoint."
+    "ownerBranchAssignment": "Owner branch assignments cannot be changed from this endpoint.",
+    "geminiNotConfigured": "Gemini extraction is not configured.",
+    "extractionImagesRequired": "Upload at least one menu image.",
+    "extractionInvalidImageType": "Only JPEG, PNG, and WebP menu images are supported.",
+    "extractionImagesTooLarge": "The uploaded images are too large for one extraction request.",
+    "extractionImageLimit": "This plan allows fewer images per extraction request.",
+    "extractionPlanLimit": "This plan has reached its menu extraction limit.",
+    "subscriptionInactive": "Your subscription is not active.",
+    "extractionJobNotFound": "Extraction job was not found.",
+    "extractionRetryNotAllowed": "Only failed or rejected extraction jobs can be retried.",
+    "extractionApproveNotAllowed": "Only completed extraction jobs can be approved.",
+    "extractionRejectNotAllowed": "Only completed or failed extraction jobs can be rejected.",
+    "extractionMissingResult": "Extraction result is missing.",
+    "extractionInvalidModelResponse": "Gemini returned an empty or invalid menu response.",
+    "extractionApplyFailed": "The reviewed extraction could not be applied to this menu."
   },
   "logs": {
     "serverStarted": "Wasla API listening on http://localhost:{{port}}/{{prefix}}"

@@ -13,6 +13,15 @@ enum AnalyticsEventType {
   ITEM_VIEW
 }
 
+enum ExtractionJobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  APPROVED
+  REJECTED
+}
+
 model Menu {
   id          String         @id @default(uuid())
   branchId    String         @unique
@@ -28,8 +37,36 @@ model Menu {
   qrCode      MenuQrCode?
   analytics   MenuAnalytics?
   analyticsEvents AnalyticsEventLog[]
+  extractionJobs ExtractionJob[]
 
   @@index([branchId, publishedAt])
+}
+
+model ExtractionJob {
+  id               String              @id @default(uuid())
+  menuId           String
+  branchId         String
+  venueId          String
+  requestedById    String?
+  status           ExtractionJobStatus @default(PENDING)
+  modelProvider    String              @default("google")
+  modelName        String
+  imageCount       Int                 @default(0)
+  rawModelResponse String?
+  extractedMenu    Json?
+  confidenceScore  Float?
+  warnings         String[]            @default([])
+  errors           String[]            @default([])
+  approvedAt       DateTime?
+  rejectedAt       DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  menu             Menu                @relation(fields: [menuId], references: [id], onDelete: Cascade)
+
+  @@index([venueId, createdAt])
+  @@index([branchId, createdAt])
+  @@index([menuId, status])
 }
 
 model MenuCategory {

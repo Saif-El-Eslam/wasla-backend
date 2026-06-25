@@ -11,6 +11,7 @@ import { requestLoggerMiddleware } from './common/middleware/request-logger.midd
 import { analyticsRouter } from './modules/analytics/analytics.routes';
 import { authRouter } from './modules/auth/auth.routes';
 import { branchRouter } from './modules/branch/branch.routes';
+import { extractionRouter } from './modules/extraction/extraction.routes';
 import { healthRouter } from './modules/health/health.routes';
 import { menuRouter } from './modules/menu/menu.routes';
 import { userRouter } from './modules/user/user.routes';
@@ -40,6 +41,7 @@ apiRouter.use('/users', userRouter);
 apiRouter.use('/venue', venueRouter);
 apiRouter.use('/branches', branchRouter);
 apiRouter.use('/branches', menuRouter);
+apiRouter.use('/branches', extractionRouter);
 
 app.use(`/${env.API_PREFIX}`, apiRouter);
 app.use(notFoundMiddleware);

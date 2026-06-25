@@ -25,3 +25,18 @@ model Subscription {
 
   venue             Venue               @relation(fields: [venueId], references: [id], onDelete: Cascade)
 }
+
+model PlanLimit {
+  id                       String    @id @default(uuid())
+  plan                     MenuPlan  @unique
+  displayName              Json
+  description              Json?
+  branchLimit              Int       @default(1)
+  extractionMonthlyLimit   Int       @default(0)
+  extractionMaxImages      Int       @default(0)
+  customQrBranding         Boolean   @default(false)
+  advancedAnalytics        Boolean   @default(false)
+  active                   Boolean   @default(true)
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+}

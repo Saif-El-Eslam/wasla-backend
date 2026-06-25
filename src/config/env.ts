@@ -18,6 +18,9 @@ const envSchema = z.object({
   R2_PUBLIC_BASE_URL: z.url().optional(),
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
+  GEMINI_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.1),
+  GEMINI_MAX_IMAGES_PER_EXTRACTION: z.coerce.number().int().positive().default(8),
+  GEMINI_MAX_INLINE_REQUEST_MB: z.coerce.number().int().positive().default(20),
 });
 
 export const env = envSchema.parse(process.env);
