@@ -53,7 +53,9 @@ async function requireItem(categoryId: string, itemId: string) {
   return item;
 }
 
-function buildPriceRows(input: z.infer<typeof createItemSchema> | z.infer<typeof updateItemSchema>) {
+function buildPriceRows(
+  input: z.infer<typeof createItemSchema> | z.infer<typeof updateItemSchema>,
+) {
   if (input.prices) {
     return input.prices.map((price, sortOrder) => ({
       label: price.label,
@@ -108,7 +110,6 @@ export async function createBranchMenu(
   return prisma.menu.create({
     data: {
       branchId,
-      name: input.name,
       theme: input.theme,
       showPrices: input.showPrices,
       qrCode: {
@@ -177,7 +178,8 @@ export async function createCategory(
   input: z.infer<typeof createCategorySchema>,
 ) {
   const menu = await requireBranchMenu(session, branchId);
-  const sortOrder = input.sortOrder ?? (await prisma.menuCategory.count({ where: { menuId: menu.id } }));
+  const sortOrder =
+    input.sortOrder ?? (await prisma.menuCategory.count({ where: { menuId: menu.id } }));
 
   return prisma.menuCategory.create({
     data: {
@@ -211,7 +213,11 @@ export async function updateCategory(
   });
 }
 
-export async function deleteCategory(session: SessionPayload | undefined, branchId: string, categoryId: string) {
+export async function deleteCategory(
+  session: SessionPayload | undefined,
+  branchId: string,
+  categoryId: string,
+) {
   const menu = await requireBranchMenu(session, branchId);
   await requireCategory(menu.id, categoryId);
   await prisma.menuCategory.delete({ where: { id: categoryId } });

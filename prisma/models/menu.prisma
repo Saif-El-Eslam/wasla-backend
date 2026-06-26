@@ -25,7 +25,6 @@ enum ExtractionJobStatus {
 model Menu {
   id          String         @id @default(uuid())
   branchId    String         @unique
-  name        Json
   theme       MenuTheme      @default(MODERN)
   showPrices  Boolean        @default(true)
   publishedAt DateTime?

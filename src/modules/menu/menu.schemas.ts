@@ -14,14 +14,15 @@ export const itemParamsSchema = categoryParamsSchema.extend({
 });
 
 export const createMenuSchema = z.object({
-  name: localizedTextSchema,
   theme: z.enum(['CLASSIC', 'MODERN', 'MINIMAL']).default('MODERN'),
   showPrices: z.boolean().default(true),
 });
 
-export const updateMenuSchema = createMenuSchema.partial().refine((value) => Object.keys(value).length > 0, {
-  message: 'At least one field is required',
-});
+export const updateMenuSchema = createMenuSchema
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: 'At least one field is required',
+  });
 
 export const createCategorySchema = z.object({
   name: localizedTextSchema,
@@ -31,9 +32,11 @@ export const createCategorySchema = z.object({
   active: z.boolean().default(true),
 });
 
-export const updateCategorySchema = createCategorySchema.partial().refine((value) => Object.keys(value).length > 0, {
-  message: 'At least one field is required',
-});
+export const updateCategorySchema = createCategorySchema
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: 'At least one field is required',
+  });
 
 export const reorderCategoriesSchema = z.object({
   categoryIds: z.array(z.string().uuid()).min(1),
@@ -57,9 +60,11 @@ export const createItemSchema = z.object({
   sortOrder: z.number().int().min(0).optional(),
 });
 
-export const updateItemSchema = createItemSchema.partial().refine((value) => Object.keys(value).length > 0, {
-  message: 'At least one field is required',
-});
+export const updateItemSchema = createItemSchema
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: 'At least one field is required',
+  });
 
 export const reorderItemsSchema = z.object({
   itemIds: z.array(z.string().uuid()).min(1),

@@ -12,7 +12,7 @@ import type {
   ExtractedItem,
   ExtractedMenu,
   rejectExtractionSchema,
-} from './schemas/extracted-menu.schema';
+} from './extracted-menu.schema';
 import type { z } from 'zod';
 
 type UploadedImage = {
@@ -214,7 +214,6 @@ async function ensureBranchMenu(branchId: string, branchName: Prisma.JsonValue) 
   return prisma.menu.create({
     data: {
       branchId,
-      name: branchName as Prisma.InputJsonValue,
       theme: 'MODERN',
       showPrices: true,
       qrCode: {
@@ -456,56 +455,58 @@ async function upsertExtractedItems(
 }
 
 async function applyExtractionToMenu(menu: MenuWithContent, extractedMenu: ExtractedMenu) {
-  await prisma.$transaction(async (tx) => {
-    await tx.menu.update({
-      where: { id: menu.id },
-      data: {
-        name: jsonOrUndefined(extractedMenu.menu.name),
-        theme: extractedMenu.menu.theme,
-        showPrices: extractedMenu.menu.showPrices,
-      },
-    });
-
-    for (const [index, category] of extractedMenu.categories.entries()) {
-      const matchedCategory = categoryMatch(menu, category);
-      const categoryData = {
-        name: jsonOrUndefined(category.name),
-        description: jsonOrUndefined(category.description),
-        imageUrl: normalizeImageUrl(category.imageUrl),
-        active: category.active,
-        sortOrder:
-          category.sortOrder ?? matchedCategory?.sortOrder ?? menu.categories.length + index,
-      };
-
-      if (matchedCategory) {
-        await tx.menuCategory.update({
-          where: { id: matchedCategory.id },
-          data: categoryData,
-        });
-        await upsertExtractedItems(tx, matchedCategory, category.items);
-        continue;
-      }
-
-      const createdCategory = await tx.menuCategory.create({
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.menu.update({
+        where: { id: menu.id },
         data: {
-          menuId: menu.id,
-          name: category.name as Prisma.InputJsonValue,
+          theme: extractedMenu.menu.theme,
+          showPrices: extractedMenu.menu.showPrices,
+        },
+      });
+
+      for (const [index, category] of extractedMenu.categories.entries()) {
+        const matchedCategory = categoryMatch(menu, category);
+        const categoryData = {
+          name: jsonOrUndefined(category.name),
           description: jsonOrUndefined(category.description),
           imageUrl: normalizeImageUrl(category.imageUrl),
           active: category.active,
-          sortOrder: category.sortOrder ?? menu.categories.length + index,
-        },
-        include: {
-          items: {
-            include: {
-              prices: true,
+          sortOrder:
+            category.sortOrder ?? matchedCategory?.sortOrder ?? menu.categories.length + index,
+        };
+
+        if (matchedCategory) {
+          await tx.menuCategory.update({
+            where: { id: matchedCategory.id },
+            data: categoryData,
+          });
+          await upsertExtractedItems(tx, matchedCategory, category.items);
+          continue;
+        }
+
+        const createdCategory = await tx.menuCategory.create({
+          data: {
+            menuId: menu.id,
+            name: category.name as Prisma.InputJsonValue,
+            description: jsonOrUndefined(category.description),
+            imageUrl: normalizeImageUrl(category.imageUrl),
+            active: category.active,
+            sortOrder: category.sortOrder ?? menu.categories.length + index,
+          },
+          include: {
+            items: {
+              include: {
+                prices: true,
+              },
             },
           },
-        },
-      });
-      await upsertExtractedItems(tx, createdCategory, category.items);
-    }
-  }, { timeout: 30000 });
+        });
+        await upsertExtractedItems(tx, createdCategory, category.items);
+      }
+    },
+    { timeout: 30000 },
+  );
 
   return prisma.menu.findUniqueOrThrow({
     where: { id: menu.id },

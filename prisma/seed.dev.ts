@@ -64,7 +64,10 @@ async function upsertMainItem(categoryId: string) {
     data: {
       categoryId,
       name: { ar: ar.item, en: 'Turkish Coffee' },
-      description: { ar: '\u0642\u0647\u0648\u0629 \u0637\u0627\u0632\u062c\u0629', en: 'Freshly brewed coffee' },
+      description: {
+        ar: '\u0642\u0647\u0648\u0629 \u0637\u0627\u0632\u062c\u0629',
+        en: 'Freshly brewed coffee',
+      },
       price: '45.00',
       available: true,
       sortOrder: 0,
@@ -109,7 +112,10 @@ async function seedPlanLimits() {
     {
       plan: 'FREE',
       displayName: { ar: 'Free', en: 'Free' },
-      description: { ar: 'Starter trial limits for one branch.', en: 'Starter trial limits for one branch.' },
+      description: {
+        ar: 'Starter trial limits for one branch.',
+        en: 'Starter trial limits for one branch.',
+      },
       branchLimit: 1,
       extractionMonthlyLimit: 1,
       extractionMaxImages: 2,
@@ -129,7 +135,10 @@ async function seedPlanLimits() {
     {
       plan: 'MENU_PRO',
       displayName: { ar: 'Menu Pro', en: 'Menu Pro' },
-      description: { ar: 'More extraction capacity and QR branding.', en: 'More extraction capacity and QR branding.' },
+      description: {
+        ar: 'More extraction capacity and QR branding.',
+        en: 'More extraction capacity and QR branding.',
+      },
       branchLimit: 3,
       extractionMonthlyLimit: 50,
       extractionMaxImages: 8,
@@ -265,13 +274,11 @@ async function main() {
   const menu = await prisma.menu.upsert({
     where: { branchId: mainBranch.id },
     update: {
-      name: { ar: ar.menu, en: 'Main Branch Menu' },
       theme: 'MODERN',
       showPrices: true,
     },
     create: {
       branchId: mainBranch.id,
-      name: { ar: ar.menu, en: 'Main Branch Menu' },
       theme: 'MODERN',
       showPrices: true,
       qrCode: {

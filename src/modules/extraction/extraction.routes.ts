@@ -17,7 +17,7 @@ import {
   extractionJobParamsSchema,
   extractionParamsSchema,
   rejectExtractionSchema,
-} from './schemas/extracted-menu.schema';
+} from './extracted-menu.schema';
 
 const upload = multer({
   storage: multer.memoryStorage(),

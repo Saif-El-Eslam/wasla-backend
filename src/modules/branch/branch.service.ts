@@ -200,7 +200,9 @@ export async function getBranchesOverview(session?: SessionPayload) {
     },
     { menus: 0, items: 0, views: 0, scans: 0 },
   );
-  const userCount = user.isVenueAdmin ? await prisma.user.count({ where: { venueId: user.venueId } }) : 0;
+  const userCount = user.isVenueAdmin
+    ? await prisma.user.count({ where: { venueId: user.venueId } })
+    : 0;
 
   return {
     branches: branches.map((branch) => ({
@@ -272,16 +274,36 @@ export async function createBranch(
 ) {
   const { venueId } = await requireVenueAdmin(session);
 
-  return prisma.branch.create({
-    data: {
-      venueId,
-      ...input,
-      openingHours: input.openingHours as Prisma.InputJsonValue | undefined,
-      logoUrl: input.logoUrl === '' ? null : input.logoUrl,
-      coverUrl: input.coverUrl === '' ? null : input.coverUrl,
-      googleMapsUrl: input.googleMapsUrl === '' ? null : input.googleMapsUrl,
-      instagramUrl: input.instagramUrl === '' ? null : input.instagramUrl,
-    },
+  return prisma.$transaction(async (tx) => {
+    const branch = await tx.branch.create({
+      data: {
+        venueId,
+        ...input,
+        openingHours: input.openingHours as Prisma.InputJsonValue | undefined,
+        logoUrl: input.logoUrl === '' ? null : input.logoUrl,
+        coverUrl: input.coverUrl === '' ? null : input.coverUrl,
+        googleMapsUrl: input.googleMapsUrl === '' ? null : input.googleMapsUrl,
+        instagramUrl: input.instagramUrl === '' ? null : input.instagramUrl,
+      },
+    });
+
+    await tx.menu.create({
+      data: {
+        branchId: branch.id,
+        theme: 'MODERN',
+        showPrices: true,
+        qrCode: {
+          create: {
+            shortCode: crypto.randomUUID().slice(0, 8),
+          },
+        },
+        analytics: {
+          create: {},
+        },
+      },
+    });
+
+    return branch;
   });
 }
 

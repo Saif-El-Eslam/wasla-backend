@@ -1,7 +1,7 @@
 import sharp from 'sharp';
 import { env } from '../../config/env';
 import { HttpError } from '../../common/http/http-error';
-import { extractedMenuSchema, type ExtractedMenu } from './schemas/extracted-menu.schema';
+import { extractedMenuSchema, type ExtractedMenu } from './extracted-menu.schema';
 
 type ParserImage = {
   buffer: Buffer;

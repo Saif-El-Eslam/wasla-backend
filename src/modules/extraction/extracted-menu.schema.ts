@@ -1,16 +1,19 @@
 import { z } from 'zod';
-import { localizedTextSchema } from '../../../common/i18n/localized-text.schema';
+import { localizedTextSchema } from '../../common/i18n/localized-text.schema';
 
 const optionalUuidSchema = z.string().uuid().optional();
-const menuThemeSchema = z.preprocess((value) => {
-  if (typeof value !== 'string') {
-    return 'MODERN';
-  }
+const menuThemeSchema = z.preprocess(
+  (value) => {
+    if (typeof value !== 'string') {
+      return 'MODERN';
+    }
 
-  const normalized = value.trim().toUpperCase();
+    const normalized = value.trim().toUpperCase();
 
-  return ['CLASSIC', 'MODERN', 'MINIMAL'].includes(normalized) ? normalized : 'MODERN';
-}, z.enum(['CLASSIC', 'MODERN', 'MINIMAL']));
+    return ['CLASSIC', 'MODERN', 'MINIMAL'].includes(normalized) ? normalized : 'MODERN';
+  },
+  z.enum(['CLASSIC', 'MODERN', 'MINIMAL']),
+);
 
 export const extractedPriceSchema = z.object({
   id: optionalUuidSchema,
@@ -45,7 +48,6 @@ export const extractedCategorySchema = z.object({
 export const extractedMenuSchema = z.object({
   menu: z.object({
     id: optionalUuidSchema,
-    name: localizedTextSchema,
     theme: menuThemeSchema.default('MODERN'),
     showPrices: z.boolean().default(true),
   }),
