@@ -12,7 +12,15 @@ const OTP_TTL_MINUTES = 10;
 
 type SanitizableUser = Pick<
   User,
-  'id' | 'venueId' | 'phone' | 'email' | 'name' | 'role' | 'phoneVerifiedAt' | 'createdAt' | 'updatedAt'
+  | 'id'
+  | 'venueId'
+  | 'phone'
+  | 'email'
+  | 'name'
+  | 'role'
+  | 'phoneVerifiedAt'
+  | 'createdAt'
+  | 'updatedAt'
 >;
 
 function sanitizeUser(user: SanitizableUser) {
@@ -35,7 +43,10 @@ function createSessionToken(payload: SessionPayload) {
   } as jwt.SignOptions);
 }
 
-async function createOtpCode(userId: string, code = env.NODE_ENV === 'production' ? undefined : '123456') {
+async function createOtpCode(
+  userId: string,
+  code = env.NODE_ENV === 'production' ? undefined : '123456',
+) {
   const plainCode = code ?? String(Math.floor(100000 + Math.random() * 900000));
   const codeHash = await bcrypt.hash(plainCode, 10);
 
@@ -196,7 +207,10 @@ export async function getCurrentUser(session?: SessionPayload) {
   return sanitizeUser(user);
 }
 
-export async function updateCurrentUser(session: SessionPayload | undefined, input: z.infer<typeof updateMeSchema>) {
+export async function updateCurrentUser(
+  session: SessionPayload | undefined,
+  input: z.infer<typeof updateMeSchema>,
+) {
   if (!session?.sub) {
     throw new HttpError(401, 'errors.authRequired');
   }
