@@ -5,7 +5,9 @@ enum MenuTheme {
 }
 
 enum AnalyticsEventType {
+  VENUE_VIEW
   MENU_VIEW
+  CATEGORY_VIEW
   QR_SCAN
   WHATSAPP_CLICK
   CALL_CLICK

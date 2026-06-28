@@ -232,6 +232,10 @@ export async function listManagementBranches(session?: SessionPayload) {
 
 export async function getBranchQr(session: SessionPayload | undefined, branchId: string) {
   const { branch } = await requireBranchAccess(session, branchId);
+  const venue = await prisma.venue.findUnique({
+    where: { id: branch.venueId },
+    select: { slug: true },
+  });
   const menu = await prisma.menu.findUnique({
     where: { branchId },
     select: {
@@ -248,6 +252,7 @@ export async function getBranchQr(session: SessionPayload | undefined, branchId:
       name: branch.name,
       slug: branch.slug,
       phone: branch.phone,
+      venueSlug: venue?.slug ?? null,
     },
     menu,
   };

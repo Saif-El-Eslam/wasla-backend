@@ -14,6 +14,7 @@ import { branchRouter } from './modules/branch/branch.routes';
 import { extractionRouter } from './modules/extraction/extraction.routes';
 import { healthRouter } from './modules/health/health.routes';
 import { menuRouter } from './modules/menu/menu.routes';
+import { publicRouter } from './modules/publicMenu/public.routes';
 import { userRouter } from './modules/user/user.routes';
 import { venueRouter } from './modules/venue/venue.routes';
 
@@ -35,6 +36,7 @@ app.use(requestLoggerMiddleware);
 
 const apiRouter = express.Router();
 apiRouter.use('/health', healthRouter);
+apiRouter.use('/public', publicRouter);
 apiRouter.use('/auth', authRouter);
 apiRouter.use('/analytics', analyticsRouter);
 apiRouter.use('/users', userRouter);

@@ -13,8 +13,8 @@ import {
 
 const cookieOptions = {
   httpOnly: true,
-  sameSite: 'lax' as const,
-  secure: env.NODE_ENV === 'production',
+  sameSite: 'none' as const, //'lax' as const,
+  secure: true, //env.NODE_ENV === 'production',
 };
 
 export const registerController = asyncHandler(async (req, res) => {

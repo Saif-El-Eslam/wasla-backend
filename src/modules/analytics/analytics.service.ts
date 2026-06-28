@@ -6,7 +6,10 @@ import type { z } from 'zod';
 import type { analyticsQuerySchema } from './analytics.schemas';
 
 const metricEventMap = {
+  venueViews: AnalyticsEventType.VENUE_VIEW,
   views: AnalyticsEventType.MENU_VIEW,
+  categoryViews: AnalyticsEventType.CATEGORY_VIEW,
+  itemViews: AnalyticsEventType.ITEM_VIEW,
   scans: AnalyticsEventType.QR_SCAN,
   whatsapp: AnalyticsEventType.WHATSAPP_CLICK,
   calls: AnalyticsEventType.CALL_CLICK,
@@ -69,7 +72,7 @@ async function getAnalyticsFallback(
       acc.maps += menu.analytics?.mapsClicks ?? 0;
       return acc;
     },
-    { views: 0, scans: 0, whatsapp: 0, calls: 0, maps: 0 },
+    { venueViews: 0, views: 0, categoryViews: 0, itemViews: 0, scans: 0, whatsapp: 0, calls: 0, maps: 0 },
   );
   const metrics = Object.fromEntries(
     (Object.keys(metricEventMap) as MetricKey[]).map((key) => [
