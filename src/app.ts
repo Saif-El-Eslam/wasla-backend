@@ -15,6 +15,7 @@ import { extractionRouter } from './modules/extraction/extraction.routes';
 import { healthRouter } from './modules/health/health.routes';
 import { menuRouter } from './modules/menu/menu.routes';
 import { publicRouter } from './modules/publicMenu/public.routes';
+import { qrRouter } from './modules/qr/qr.routes';
 import { userRouter } from './modules/user/user.routes';
 import { venueRouter } from './modules/venue/venue.routes';
 
@@ -41,6 +42,7 @@ apiRouter.use('/auth', authRouter);
 apiRouter.use('/analytics', analyticsRouter);
 apiRouter.use('/users', userRouter);
 apiRouter.use('/venue', venueRouter);
+apiRouter.use('/branches', qrRouter);
 apiRouter.use('/branches', branchRouter);
 apiRouter.use('/branches', menuRouter);
 apiRouter.use('/branches', extractionRouter);
