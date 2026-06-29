@@ -21,7 +21,17 @@ type SanitizableUser = Pick<
   | 'phoneVerifiedAt'
   | 'createdAt'
   | 'updatedAt'
->;
+> & {
+  branchAccesses?: Array<{
+    branch: {
+      id: string;
+      name: unknown;
+      slug: string;
+      isMain: boolean;
+      active: boolean;
+    };
+  }>;
+};
 
 function sanitizeUser(user: SanitizableUser) {
   return {
@@ -34,6 +44,7 @@ function sanitizeUser(user: SanitizableUser) {
     verified: Boolean(user.phoneVerifiedAt),
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
+    branches: user.branchAccesses?.map((access) => access.branch) ?? [],
   };
 }
 
@@ -197,6 +208,20 @@ export async function getCurrentUser(session?: SessionPayload) {
       phoneVerifiedAt: true,
       createdAt: true,
       updatedAt: true,
+      branchAccesses: {
+        include: {
+          branch: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              isMain: true,
+              active: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+      },
     },
   });
 

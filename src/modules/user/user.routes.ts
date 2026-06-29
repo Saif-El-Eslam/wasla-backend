@@ -8,7 +8,12 @@ import {
   userListQuerySchema,
   userParamsSchema,
 } from './user.schemas';
-import { createUserController, listUsersController, updateUserBranchesController } from './user.controller';
+import {
+  createUserController,
+  deleteUserController,
+  listUsersController,
+  updateUserBranchesController,
+} from './user.controller';
 
 export const userRouter = Router();
 
@@ -21,3 +26,4 @@ userRouter.patch(
   validateRequest({ params: userParamsSchema, body: updateUserBranchesSchema }),
   updateUserBranchesController,
 );
+userRouter.delete('/:userId', validateRequest({ params: userParamsSchema }), deleteUserController);

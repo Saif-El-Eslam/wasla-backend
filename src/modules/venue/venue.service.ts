@@ -1,5 +1,6 @@
 import { prisma } from '../../database/prisma';
 import { HttpError } from '../../common/http/http-error';
+import type { LocalizedText } from '../../common/i18n/localized-text';
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
 import type { z } from 'zod';
 import type { setupVenueSchema, updateVenueSchema } from './venue.schemas';
@@ -10,6 +11,10 @@ function requireUserId(session?: SessionPayload) {
   }
 
   return session.sub;
+}
+
+function asLocalizedText(value: unknown): LocalizedText {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as LocalizedText) : {};
 }
 
 export async function getMyVenue(session?: SessionPayload) {
@@ -107,10 +112,28 @@ export async function updateMyVenue(session: SessionPayload | undefined, input: 
     throw new HttpError(404, 'errors.venueRequired');
   }
 
+  const currentVenue = await prisma.venue.findUnique({
+    where: { id: user.venueId },
+    select: {
+      name: true,
+      description: true,
+      address: true,
+    },
+  });
+
+  if (!currentVenue) {
+    throw new HttpError(404, 'errors.venueRequired');
+  }
+
   return prisma.venue.update({
     where: { id: user.venueId },
     data: {
       ...input,
+      name: input.name ? { ...asLocalizedText(currentVenue.name), ...input.name } : undefined,
+      description: input.description
+        ? { ...asLocalizedText(currentVenue.description), ...input.description }
+        : undefined,
+      address: input.address ? { ...asLocalizedText(currentVenue.address), ...input.address } : undefined,
       googleMapsUrl: input.googleMapsUrl === '' ? null : input.googleMapsUrl,
       instagramUrl: input.instagramUrl === '' ? null : input.instagramUrl,
     },

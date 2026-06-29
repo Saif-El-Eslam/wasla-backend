@@ -210,3 +210,31 @@ export async function updateUserBranches(
 
   return sanitizeUser(updatedUser);
 }
+
+export async function deleteVenueUser(session: SessionPayload | undefined, userId: string) {
+  const admin = await requireVenueAdmin(session);
+
+  if (admin.id === userId) {
+    throw new HttpError(400, 'errors.cannotDeleteSelf');
+  }
+
+  const user = await prisma.user.findFirst({
+    where: {
+      id: userId,
+      venueId: admin.venueId,
+    },
+    select: { id: true, role: true },
+  });
+
+  if (!user) {
+    throw new HttpError(404, 'errors.userNotFound');
+  }
+
+  if (user.role === 'OWNER') {
+    throw new HttpError(400, 'errors.cannotDeleteOwner');
+  }
+
+  await prisma.user.delete({ where: { id: userId } });
+
+  return { deleted: true };
+}
