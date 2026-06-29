@@ -2,7 +2,7 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
-import { corsOrigins, env } from './config/env';
+import { env, isAllowedCorsOrigin } from './config/env';
 import { errorMiddleware } from './common/middleware/error.middleware';
 import { i18nMiddleware } from './common/middleware/i18n.middleware';
 import { notFoundMiddleware } from './common/middleware/not-found.middleware';
@@ -25,7 +25,14 @@ app.disable('x-powered-by');
 app.use(helmet());
 app.use(
   cors({
-    origin: corsOrigins,
+    origin(origin, callback) {
+      if (isAllowedCorsOrigin(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error(`CORS origin not allowed: ${origin}`));
+    },
     credentials: true,
   }),
 );

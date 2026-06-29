@@ -30,4 +30,28 @@ export const corsOrigins = env.FRONTEND_ORIGIN.split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+export function isAllowedCorsOrigin(origin: string | undefined) {
+  if (!origin) {
+    return true;
+  }
+
+  if (corsOrigins.includes(origin)) {
+    return true;
+  }
+
+  if (env.NODE_ENV !== 'production') {
+    try {
+      const url = new URL(origin);
+      const isLocalhost = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+      const isNgrokFreeDev = url.protocol === 'https:' && url.hostname.endsWith('.ngrok-free.dev');
+
+      return isLocalhost || isNgrokFreeDev;
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+}
+
 export const frontendUrl = new URL(corsOrigins[0]);
