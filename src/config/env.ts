@@ -29,3 +29,5 @@ export const env = envSchema.parse(process.env);
 export const corsOrigins = env.FRONTEND_ORIGIN.split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
+
+export const frontendUrl = new URL(corsOrigins[0]);
