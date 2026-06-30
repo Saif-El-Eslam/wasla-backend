@@ -16,7 +16,10 @@ import { healthRouter } from './modules/health/health.routes';
 import { menuRouter } from './modules/menu/menu.routes';
 import { publicRouter } from './modules/publicMenu/public.routes';
 import { qrRouter } from './modules/qr/qr.routes';
-import { adminSubscriptionRouter, subscriptionRouter } from './modules/subscription/subscription.routes';
+import {
+  adminSubscriptionRouter,
+  subscriptionRouter,
+} from './modules/subscription/subscription.routes';
 import { userRouter } from './modules/user/user.routes';
 import { venueRouter } from './modules/venue/venue.routes';
 import { imageUploadRouter } from './storage/image-upload.routes';
@@ -62,3 +65,5 @@ apiRouter.use('/branches', extractionRouter);
 app.use(`/${env.API_PREFIX}`, apiRouter);
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);
+
+export default app;
