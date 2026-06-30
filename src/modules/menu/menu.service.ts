@@ -3,6 +3,7 @@ import { prisma } from '../../database/prisma';
 import { requireBranchAccess } from '../../common/auth/branch-access';
 import { HttpError } from '../../common/http/http-error';
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
+import { deleteImageByUrl, deleteImagesByUrl, imageUrlChanged } from '../../storage/image-storage.service';
 import type { z } from 'zod';
 import type {
   createCategorySchema,
@@ -106,6 +107,7 @@ export async function createBranchMenu(
   input: z.infer<typeof createMenuSchema>,
 ) {
   await requireBranchAccess(session, branchId);
+  const shortCode = crypto.randomUUID().slice(0, 8);
 
   return prisma.menu.create({
     data: {
@@ -114,7 +116,8 @@ export async function createBranchMenu(
       showPrices: input.showPrices,
       qrCode: {
         create: {
-          shortCode: crypto.randomUUID().slice(0, 8),
+          shortCode,
+          targetUrl: `/public/m/${shortCode}`,
         },
       },
       analytics: {
@@ -148,7 +151,23 @@ export async function updateBranchMenu(
 
 export async function deleteBranchMenu(session: SessionPayload | undefined, branchId: string) {
   const menu = await requireBranchMenu(session, branchId);
+  const menuImages = await prisma.menu.findUnique({
+    where: { id: menu.id },
+    select: {
+      categories: {
+        select: {
+          imageUrl: true,
+          items: { select: { imageUrl: true } },
+        },
+      },
+    },
+  });
+
   await prisma.menu.delete({ where: { id: menu.id } });
+  await deleteImagesByUrl([
+    ...(menuImages?.categories.map((category) => category.imageUrl) ?? []),
+    ...(menuImages?.categories.flatMap((category) => category.items.map((item) => item.imageUrl)) ?? []),
+  ]);
   return { deleted: true };
 }
 
@@ -201,9 +220,9 @@ export async function updateCategory(
   input: z.infer<typeof updateCategorySchema>,
 ) {
   const menu = await requireBranchMenu(session, branchId);
-  await requireCategory(menu.id, categoryId);
+  const existingCategory = await requireCategory(menu.id, categoryId);
 
-  return prisma.menuCategory.update({
+  const category = await prisma.menuCategory.update({
     where: { id: categoryId },
     data: {
       ...input,
@@ -211,6 +230,12 @@ export async function updateCategory(
     },
     include: { items: { orderBy: { sortOrder: 'asc' } } },
   });
+
+  if (input.imageUrl !== undefined && imageUrlChanged(existingCategory.imageUrl, category.imageUrl)) {
+    await deleteImageByUrl(existingCategory.imageUrl);
+  }
+
+  return category;
 }
 
 export async function deleteCategory(
@@ -219,8 +244,17 @@ export async function deleteCategory(
   categoryId: string,
 ) {
   const menu = await requireBranchMenu(session, branchId);
-  await requireCategory(menu.id, categoryId);
+  const category = await prisma.menuCategory.findFirst({
+    where: { id: categoryId, menuId: menu.id },
+    include: { items: { select: { imageUrl: true } } },
+  });
+
+  if (!category) {
+    throw new HttpError(404, 'errors.categoryNotFound');
+  }
+
   await prisma.menuCategory.delete({ where: { id: categoryId } });
+  await deleteImagesByUrl([category.imageUrl, ...category.items.map((item) => item.imageUrl)]);
   return { deleted: true };
 }
 
@@ -282,10 +316,10 @@ export async function updateItem(
 ) {
   const menu = await requireBranchMenu(session, branchId);
   await requireCategory(menu.id, categoryId);
-  await requireItem(categoryId, itemId);
+  const existingItem = await requireItem(categoryId, itemId);
   const priceRows = buildPriceRows(input);
 
-  return prisma.menuItem.update({
+  const item = await prisma.menuItem.update({
     where: { id: itemId },
     data: {
       ...input,
@@ -302,6 +336,12 @@ export async function updateItem(
       prices: { orderBy: { sortOrder: 'asc' } },
     },
   });
+
+  if (input.imageUrl !== undefined && imageUrlChanged(existingItem.imageUrl, item.imageUrl)) {
+    await deleteImageByUrl(existingItem.imageUrl);
+  }
+
+  return item;
 }
 
 export async function deleteItem(
@@ -312,8 +352,9 @@ export async function deleteItem(
 ) {
   const menu = await requireBranchMenu(session, branchId);
   await requireCategory(menu.id, categoryId);
-  await requireItem(categoryId, itemId);
+  const item = await requireItem(categoryId, itemId);
   await prisma.menuItem.delete({ where: { id: itemId } });
+  await deleteImageByUrl(item.imageUrl);
   return { deleted: true };
 }
 

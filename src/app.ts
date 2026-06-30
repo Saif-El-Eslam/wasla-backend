@@ -18,6 +18,7 @@ import { publicRouter } from './modules/publicMenu/public.routes';
 import { qrRouter } from './modules/qr/qr.routes';
 import { userRouter } from './modules/user/user.routes';
 import { venueRouter } from './modules/venue/venue.routes';
+import { imageUploadRouter } from './storage/image-upload.routes';
 
 export const app = express();
 
@@ -46,6 +47,7 @@ const apiRouter = express.Router();
 apiRouter.use('/health', healthRouter);
 apiRouter.use('/public', publicRouter);
 apiRouter.use('/auth', authRouter);
+apiRouter.use('/uploads', imageUploadRouter);
 apiRouter.use('/analytics', analyticsRouter);
 apiRouter.use('/users', userRouter);
 apiRouter.use('/venue', venueRouter);

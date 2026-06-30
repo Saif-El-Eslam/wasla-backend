@@ -211,6 +211,8 @@ async function ensureBranchMenu(branchId: string, branchName: Prisma.JsonValue) 
     return existingMenu;
   }
 
+  const shortCode = crypto.randomUUID().slice(0, 8);
+
   return prisma.menu.create({
     data: {
       branchId,
@@ -218,7 +220,8 @@ async function ensureBranchMenu(branchId: string, branchName: Prisma.JsonValue) 
       showPrices: true,
       qrCode: {
         create: {
-          shortCode: crypto.randomUUID().slice(0, 8),
+          shortCode,
+          targetUrl: `/public/m/${shortCode}`,
         },
       },
       analytics: {

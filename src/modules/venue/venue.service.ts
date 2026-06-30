@@ -2,6 +2,7 @@ import { prisma } from '../../database/prisma';
 import { HttpError } from '../../common/http/http-error';
 import type { LocalizedText } from '../../common/i18n/localized-text';
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
+import { deleteImagesByUrl, imageUrlChanged } from '../../storage/image-storage.service';
 import type { z } from 'zod';
 import type { setupVenueSchema, updateVenueSchema } from './venue.schemas';
 
@@ -57,6 +58,8 @@ export async function setupVenue(session: SessionPayload | undefined, input: z.i
         type: input.type,
         name: input.name,
         slug: input.slug,
+        logoUrl: input.logoUrl || null,
+        coverUrl: input.coverUrl || null,
         description: input.description,
         defaultLocale: input.defaultLocale,
         supportedLocales: input.supportedLocales,
@@ -118,6 +121,8 @@ export async function updateMyVenue(session: SessionPayload | undefined, input: 
       name: true,
       description: true,
       address: true,
+      logoUrl: true,
+      coverUrl: true,
     },
   });
 
@@ -125,7 +130,7 @@ export async function updateMyVenue(session: SessionPayload | undefined, input: 
     throw new HttpError(404, 'errors.venueRequired');
   }
 
-  return prisma.venue.update({
+  const updatedVenue = await prisma.venue.update({
     where: { id: user.venueId },
     data: {
       ...input,
@@ -134,6 +139,8 @@ export async function updateMyVenue(session: SessionPayload | undefined, input: 
         ? { ...asLocalizedText(currentVenue.description), ...input.description }
         : undefined,
       address: input.address ? { ...asLocalizedText(currentVenue.address), ...input.address } : undefined,
+      logoUrl: input.logoUrl === '' ? null : input.logoUrl,
+      coverUrl: input.coverUrl === '' ? null : input.coverUrl,
       googleMapsUrl: input.googleMapsUrl === '' ? null : input.googleMapsUrl,
       instagramUrl: input.instagramUrl === '' ? null : input.instagramUrl,
     },
@@ -141,4 +148,15 @@ export async function updateMyVenue(session: SessionPayload | undefined, input: 
       subscription: true,
     },
   });
+
+  await deleteImagesByUrl([
+    input.logoUrl !== undefined && imageUrlChanged(currentVenue.logoUrl, updatedVenue.logoUrl)
+      ? currentVenue.logoUrl
+      : null,
+    input.coverUrl !== undefined && imageUrlChanged(currentVenue.coverUrl, updatedVenue.coverUrl)
+      ? currentVenue.coverUrl
+      : null,
+  ]);
+
+  return updatedVenue;
 }

@@ -10,6 +10,10 @@ import { resolveLocalizedText } from '../../common/i18n/localized-text';
 import type { LocalizedText } from '../../common/i18n/localized-text';
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
 
+export type QrUrlContext = {
+  apiOrigin?: string;
+};
+
 const qrInclude = Prisma.validator<Prisma.MenuInclude>()({
   qrCode: true,
   analytics: true,
@@ -42,21 +46,52 @@ function publicApiOrigin() {
   return env.PUBLIC_API_ORIGIN ?? `http://localhost:${env.PORT}`;
 }
 
-function absoluteApiUrl(path: string) {
-  return `${publicApiOrigin().replace(/\/$/, '')}/${env.API_PREFIX.replace(/^\/|\/$/g, '')}${path}`;
+function apiPrefix() {
+  return env.API_PREFIX.replace(/^\/|\/$/g, '');
+}
+
+function absoluteApiUrl(path: string, context: QrUrlContext = {}) {
+  return `${(context.apiOrigin ?? publicApiOrigin()).replace(/\/$/, '')}/${apiPrefix()}${path}`;
 }
 
 function publicMenuUrl(menu: QrMenu) {
   return `${firstFrontendOrigin().replace(/\/$/, '')}/en/venues/${menu.branch.venue.slug}/${menu.branch.slug}/menu`;
 }
 
-function shortUrl(shortCode: string) {
-  return absoluteApiUrl(`/public/m/${shortCode}`);
+function shortPath(shortCode: string) {
+  return `/public/m/${shortCode}`;
 }
 
-function assetUrl(branchId: string, format: QrFormat) {
+function relativeShortPath(shortCode: string, value?: string | null) {
+  if (!value) {
+    return shortPath(shortCode);
+  }
+
+  const apiPrefixPattern = new RegExp(`^/${apiPrefix().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+  const normalizePath = (path: string) => {
+    const withoutApiPrefix = path.replace(apiPrefixPattern, '');
+
+    return withoutApiPrefix === shortPath(shortCode) ? withoutApiPrefix : null;
+  };
+
+  if (value.startsWith('/')) {
+    return normalizePath(value) ?? shortPath(shortCode);
+  }
+
+  try {
+    return normalizePath(new URL(value).pathname) ?? shortPath(shortCode);
+  } catch {
+    return shortPath(shortCode);
+  }
+}
+
+function shortUrl(shortCode: string, context: QrUrlContext = {}, value?: string | null) {
+  return absoluteApiUrl(relativeShortPath(shortCode, value), context);
+}
+
+function assetUrl(branchId: string, format: QrFormat, context: QrUrlContext = {}) {
   const path = format === 'poster' ? `/branches/${branchId}/qr/poster.png` : `/branches/${branchId}/qr.${format}`;
-  return absoluteApiUrl(path);
+  return absoluteApiUrl(path, context);
 }
 
 function escapeXml(value: string) {
@@ -95,12 +130,12 @@ function brandForMenu(menu: QrMenu, requestedLocale?: string) {
   };
 }
 
-function qrRecordPayload(menu: QrMenu) {
+function qrRecordPayload(menu: QrMenu, context: QrUrlContext = {}) {
   if (!menu.qrCode) {
     throw new HttpError(404, 'errors.menuNotFound');
   }
 
-  const targetUrl = menu.qrCode.targetUrl || shortUrl(menu.qrCode.shortCode);
+  const targetUrl = shortUrl(menu.qrCode.shortCode, context, menu.qrCode.targetUrl);
 
   return {
     id: menu.qrCode.id,
@@ -109,9 +144,9 @@ function qrRecordPayload(menu: QrMenu) {
     targetUrl,
     shortUrl: targetUrl,
     imageUrl: menu.qrCode.imageUrl,
-    pngUrl: assetUrl(menu.branchId, 'png'),
-    svgUrl: assetUrl(menu.branchId, 'svg'),
-    posterUrl: assetUrl(menu.branchId, 'poster'),
+    pngUrl: assetUrl(menu.branchId, 'png', context),
+    svgUrl: assetUrl(menu.branchId, 'svg', context),
+    posterUrl: assetUrl(menu.branchId, 'poster', context),
   };
 }
 
@@ -132,9 +167,9 @@ async function ensureQrCode(menuId: string) {
   const existing = await prisma.menuQrCode.findUnique({ where: { menuId } });
 
   if (existing) {
-    const targetUrl = existing.targetUrl || shortUrl(existing.shortCode);
+    const targetUrl = relativeShortPath(existing.shortCode, existing.targetUrl);
 
-    if (!existing.targetUrl) {
+    if (existing.targetUrl !== targetUrl) {
       return prisma.menuQrCode.update({
         where: { id: existing.id },
         data: { targetUrl },
@@ -150,7 +185,7 @@ async function ensureQrCode(menuId: string) {
     data: {
       menuId,
       shortCode: shortCodeValue,
-      targetUrl: shortUrl(shortCodeValue),
+      targetUrl: shortPath(shortCodeValue),
     },
   });
 }
@@ -174,7 +209,7 @@ async function getMenuForBranch(session: SessionPayload | undefined, branchId: s
     });
   }
 
-  if (!menu.qrCode.targetUrl) {
+  if (menu.qrCode.targetUrl !== relativeShortPath(menu.qrCode.shortCode, menu.qrCode.targetUrl)) {
     await ensureQrCode(menu.id);
     return prisma.menu.findUniqueOrThrow({
       where: { id: menu.id },
@@ -271,8 +306,8 @@ async function logoComposite(input: {
   return { input: body, left: input.left, top: input.top };
 }
 
-async function renderQrPng(menu: QrMenu, requestedLocale?: string) {
-  const qrRecord = qrRecordPayload(menu);
+async function renderQrPng(menu: QrMenu, requestedLocale?: string, context: QrUrlContext = {}) {
+  const qrRecord = qrRecordPayload(menu, context);
   const brand = brandForMenu(menu, requestedLocale);
   const qrSize = 720;
   const qrLeft = 120;
@@ -363,8 +398,8 @@ function qrSvgModules(targetUrl: string) {
   return rects.join('');
 }
 
-function renderQrSvg(menu: QrMenu, requestedLocale?: string) {
-  const qrRecord = qrRecordPayload(menu);
+function renderQrSvg(menu: QrMenu, requestedLocale?: string, context: QrUrlContext = {}) {
+  const qrRecord = qrRecordPayload(menu, context);
   const brand = brandForMenu(menu, requestedLocale);
   const venueInitial = escapeXml(brand.venueName.charAt(0).toUpperCase() || 'V');
 
@@ -391,8 +426,8 @@ function renderQrSvg(menu: QrMenu, requestedLocale?: string) {
 </svg>`;
 }
 
-async function renderPosterPng(menu: QrMenu, requestedLocale?: string) {
-  const qrPng = await renderQrPng(menu, requestedLocale);
+async function renderPosterPng(menu: QrMenu, requestedLocale?: string, context: QrUrlContext = {}) {
+  const qrPng = await renderQrPng(menu, requestedLocale, context);
   const brand = brandForMenu(menu, requestedLocale);
   const header = Buffer.from(`
     <svg width="1200" height="1600" viewBox="0 0 1200 1600" xmlns="http://www.w3.org/2000/svg">
@@ -427,9 +462,14 @@ async function renderPosterPng(menu: QrMenu, requestedLocale?: string) {
     .toBuffer();
 }
 
-export async function getBranchQrAssets(session: SessionPayload | undefined, branchId: string, requestedLocale?: string) {
+export async function getBranchQrAssets(
+  session: SessionPayload | undefined,
+  branchId: string,
+  requestedLocale?: string,
+  context: QrUrlContext = {},
+) {
   const menu = await getMenuForBranch(session, branchId);
-  const preview = await renderQrPng(menu, requestedLocale);
+  const preview = await renderQrPng(menu, requestedLocale, context);
 
   return {
     branch: {
@@ -449,7 +489,7 @@ export async function getBranchQrAssets(session: SessionPayload | undefined, bra
     menu: {
       id: menu.id,
       publishedAt: menu.publishedAt,
-      qrCode: qrRecordPayload(menu),
+      qrCode: qrRecordPayload(menu, context),
       analytics: menu.analytics,
     },
     publicMenuUrl: publicMenuUrl(menu),
@@ -458,7 +498,12 @@ export async function getBranchQrAssets(session: SessionPayload | undefined, bra
   };
 }
 
-export async function regenerateBranchQr(session: SessionPayload | undefined, branchId: string, requestedLocale?: string) {
+export async function regenerateBranchQr(
+  session: SessionPayload | undefined,
+  branchId: string,
+  requestedLocale?: string,
+  context: QrUrlContext = {},
+) {
   const menu = await getMenuForBranch(session, branchId);
   const nextShortCode = await createShortCode();
 
@@ -466,12 +511,12 @@ export async function regenerateBranchQr(session: SessionPayload | undefined, br
     where: { menuId: menu.id },
     data: {
       shortCode: nextShortCode,
-      targetUrl: shortUrl(nextShortCode),
+      targetUrl: shortPath(nextShortCode),
       imageUrl: null,
     },
   });
 
-  return getBranchQrAssets(session, branchId, requestedLocale);
+  return getBranchQrAssets(session, branchId, requestedLocale, context);
 }
 
 export async function renderBranchQrAsset(
@@ -479,6 +524,7 @@ export async function renderBranchQrAsset(
   branchId: string,
   format: QrFormat,
   requestedLocale?: string,
+  context: QrUrlContext = {},
 ) {
   const menu = await getMenuForBranch(session, branchId);
 
@@ -486,7 +532,7 @@ export async function renderBranchQrAsset(
     return {
       contentType: 'image/svg+xml; charset=utf-8',
       filename: `wasla-${menu.branch.slug}-qr.svg`,
-      body: Buffer.from(renderQrSvg(menu, requestedLocale)),
+      body: Buffer.from(renderQrSvg(menu, requestedLocale, context)),
     };
   }
 
@@ -494,13 +540,13 @@ export async function renderBranchQrAsset(
     return {
       contentType: 'image/png',
       filename: `wasla-${menu.branch.slug}-poster.png`,
-      body: await renderPosterPng(menu, requestedLocale),
+      body: await renderPosterPng(menu, requestedLocale, context),
     };
   }
 
   return {
     contentType: 'image/png',
     filename: `wasla-${menu.branch.slug}-qr.png`,
-    body: await renderQrPng(menu, requestedLocale),
+    body: await renderQrPng(menu, requestedLocale, context),
   };
 }

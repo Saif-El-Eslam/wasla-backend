@@ -20,6 +20,8 @@ export const setupVenueSchema = z.object({
     .default('RESTAURANT'),
   name: localizedTextSchema,
   slug: z.string().trim().min(3).max(80).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  logoUrl: optionalUrl,
+  coverUrl: optionalUrl,
   description: localizedTextSchema.optional(),
   defaultLocale: z.enum(['ar', 'en']).default('ar'),
   supportedLocales: z.array(z.enum(['ar', 'en'])).min(1).default(['ar', 'en']),

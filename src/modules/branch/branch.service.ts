@@ -9,6 +9,7 @@ import {
 } from '../../common/auth/branch-access';
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
 import { buildPaginationMeta, type PaginationOptions } from '../../common/pagination/pagination';
+import { deleteImagesByUrl, imageUrlChanged } from '../../storage/image-storage.service';
 import type { z } from 'zod';
 import type { createBranchSchema, updateBranchSchema } from './branch.schemas';
 
@@ -280,6 +281,7 @@ export async function createBranch(
   const { venueId } = await requireVenueAdmin(session);
 
   return prisma.$transaction(async (tx) => {
+    const shortCode = crypto.randomUUID().slice(0, 8);
     const branch = await tx.branch.create({
       data: {
         venueId,
@@ -299,7 +301,8 @@ export async function createBranch(
         showPrices: true,
         qrCode: {
           create: {
-            shortCode: crypto.randomUUID().slice(0, 8),
+            shortCode,
+            targetUrl: `/public/m/${shortCode}`,
           },
         },
         analytics: {
@@ -341,7 +344,7 @@ export async function updateBranch(
     }
   }
 
-  return prisma.branch.update({
+  const updatedBranch = await prisma.branch.update({
     where: { id: branchId },
     data: {
       ...input,
@@ -352,6 +355,13 @@ export async function updateBranch(
       instagramUrl: input.instagramUrl === '' ? null : input.instagramUrl,
     },
   });
+
+  await deleteImagesByUrl([
+    input.logoUrl !== undefined && imageUrlChanged(branch.logoUrl, updatedBranch.logoUrl) ? branch.logoUrl : null,
+    input.coverUrl !== undefined && imageUrlChanged(branch.coverUrl, updatedBranch.coverUrl) ? branch.coverUrl : null,
+  ]);
+
+  return updatedBranch;
 }
 
 export async function setMainBranch(session: SessionPayload | undefined, branchId: string) {
@@ -381,6 +391,19 @@ export async function deleteBranch(session: SessionPayload | undefined, branchId
   const { venueId } = await requireVenueAdmin(session);
   const branch = await prisma.branch.findFirst({
     where: { id: branchId, venueId },
+    include: {
+      menu: {
+        include: {
+          categories: {
+            include: {
+              items: {
+                select: { imageUrl: true },
+              },
+            },
+          },
+        },
+      },
+    },
   });
 
   if (!branch) {
@@ -419,9 +442,22 @@ export async function deleteBranch(session: SessionPayload | undefined, branchId
       prisma.branch.update({ where: { id: replacement.id }, data: { isMain: true, active: true } }),
     ]);
 
+    await deleteImagesByUrl([
+      branch.logoUrl,
+      branch.coverUrl,
+      ...(branch.menu?.categories.map((category) => category.imageUrl) ?? []),
+      ...(branch.menu?.categories.flatMap((category) => category.items.map((item) => item.imageUrl)) ?? []),
+    ]);
+
     return { deleted: true };
   }
 
   await prisma.branch.delete({ where: { id: branchId } });
+  await deleteImagesByUrl([
+    branch.logoUrl,
+    branch.coverUrl,
+    ...(branch.menu?.categories.map((category) => category.imageUrl) ?? []),
+    ...(branch.menu?.categories.flatMap((category) => category.items.map((item) => item.imageUrl)) ?? []),
+  ]);
   return { deleted: true };
 }
