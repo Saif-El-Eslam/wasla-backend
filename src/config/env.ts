@@ -39,6 +39,9 @@ export function isAllowedCorsOrigin(origin: string | undefined) {
     return true;
   }
 
+  console.log('origin', origin);
+  console.log('corsOrigins', corsOrigins);
+
   if (corsOrigins.includes(origin)) {
     return true;
   }
