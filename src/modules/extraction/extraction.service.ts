@@ -1,10 +1,15 @@
-import { ExtractionJobStatus, MenuPlan, Prisma, SubscriptionStatus } from '@prisma/client';
+import { ExtractionJobStatus, Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma';
 import { requireBranchAccess } from '../../common/auth/branch-access';
 import { HttpError } from '../../common/http/http-error';
 import { translate } from '../../common/i18n/i18n';
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
 import { env } from '../../config/env';
+import {
+  assertBranchMutationAllowed,
+  assertExtractionAllowed,
+  getExtractionAllowance,
+} from '../subscription/subscription.service';
 import { parseMenuImages } from './gemini-menu-parser.service';
 import type {
   approveExtractionSchema,
@@ -18,20 +23,6 @@ import type { z } from 'zod';
 type UploadedImage = {
   buffer: Buffer;
   mimeType: string;
-};
-
-const fallbackPlanLimits: Record<
-  MenuPlan,
-  {
-    extractionMonthlyLimit: number;
-    extractionMaxImages: number;
-  }
-> = {
-  FREE: { extractionMonthlyLimit: 1, extractionMaxImages: 2 },
-  MENU_STARTER: { extractionMonthlyLimit: 10, extractionMaxImages: 4 },
-  MENU_PRO: { extractionMonthlyLimit: 50, extractionMaxImages: 8 },
-  MENU_MULTI_BRANCH: { extractionMonthlyLimit: 100, extractionMaxImages: 8 },
-  WASLA_COMPLETE: { extractionMonthlyLimit: 100, extractionMaxImages: 8 },
 };
 
 const menuInclude = Prisma.validator<Prisma.MenuInclude>()({
@@ -51,88 +42,6 @@ const menuInclude = Prisma.validator<Prisma.MenuInclude>()({
 });
 
 type MenuWithContent = Prisma.MenuGetPayload<{ include: typeof menuInclude }>;
-
-function monthStart() {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), 1);
-}
-
-function activeSubscription(status: SubscriptionStatus, currentPeriodEnds: Date | null) {
-  const statusAllows = status === 'ACTIVE' || status === 'TRIALING';
-  const periodAllows = !currentPeriodEnds || currentPeriodEnds.getTime() > Date.now();
-
-  return statusAllows && periodAllows;
-}
-
-async function getPlanAllowance(venueId: string) {
-  const subscription = await prisma.subscription.findUnique({
-    where: { venueId },
-  });
-  const plan = subscription?.plan ?? MenuPlan.FREE;
-  const limits =
-    (await prisma.planLimit.findUnique({
-      where: { plan },
-    })) ?? fallbackPlanLimits[plan];
-  const extractionMonthlyLimit = limits.extractionMonthlyLimit;
-  const extractionMaxImages = limits.extractionMaxImages;
-  const usedThisMonth = await prisma.extractionJob.count({
-    where: {
-      venueId,
-      createdAt: { gte: monthStart() },
-      status: {
-        in: [
-          ExtractionJobStatus.COMPLETED,
-          ExtractionJobStatus.APPROVED,
-          ExtractionJobStatus.PROCESSING,
-          ExtractionJobStatus.PENDING,
-          ExtractionJobStatus.REJECTED,
-        ],
-      },
-    },
-  });
-  const subscriptionActive = subscription
-    ? activeSubscription(subscription.status, subscription.currentPeriodEnds)
-    : true;
-
-  return {
-    plan,
-    subscriptionStatus: subscription?.status ?? SubscriptionStatus.TRIALING,
-    canExtract:
-      subscriptionActive && extractionMonthlyLimit > 0 && usedThisMonth < extractionMonthlyLimit,
-    monthlyExtractions: extractionMonthlyLimit,
-    usedThisMonth,
-    remainingThisMonth: Math.max(extractionMonthlyLimit - usedThisMonth, 0),
-    maxImages: Math.min(extractionMaxImages, env.GEMINI_MAX_IMAGES_PER_EXTRACTION),
-  };
-}
-
-async function assertExtractionAllowed(venueId: string, imageCount: number) {
-  const allowance = await getPlanAllowance(venueId);
-
-  if (!allowance.canExtract) {
-    throw new HttpError(403, 'errors.extractionPlanLimit');
-  }
-
-  if (imageCount > allowance.maxImages) {
-    throw new HttpError(400, 'errors.extractionImageLimit');
-  }
-
-  return allowance;
-}
-
-async function assertSubscriptionAllowsActions(venueId: string) {
-  const subscription = await prisma.subscription.findUnique({
-    where: { venueId },
-  });
-
-  if (!subscription) {
-    return;
-  }
-
-  if (!activeSubscription(subscription.status, subscription.currentPeriodEnds)) {
-    throw new HttpError(403, 'errors.subscriptionInactive');
-  }
-}
 
 function normalizeText(value: unknown) {
   if (!value || typeof value !== 'object') {
@@ -306,6 +215,7 @@ export async function startExtractionJob(
     throw new HttpError(400, 'errors.extractionImagesRequired');
   }
 
+  await assertBranchMutationAllowed(user.venueId, branchId);
   await assertExtractionAllowed(user.venueId, images.length);
   const menu = await ensureBranchMenu(branchId, branch.name);
   const job = await prisma.extractionJob.create({
@@ -324,7 +234,7 @@ export async function startExtractionJob(
 
   return {
     job: compactJob(job),
-    limits: await getPlanAllowance(user.venueId),
+    limits: await getExtractionAllowance(user.venueId),
     menu,
   };
 }
@@ -356,7 +266,7 @@ export async function getLatestExtractionJob(
 
   return {
     job,
-    limits: await getPlanAllowance(user.venueId),
+    limits: await getExtractionAllowance(user.venueId),
   };
 }
 
@@ -369,7 +279,7 @@ export async function getExtractionJob(
 
   return {
     job,
-    limits: await getPlanAllowance(user.venueId),
+    limits: await getExtractionAllowance(user.venueId),
   };
 }
 
@@ -529,7 +439,7 @@ export async function approveExtractionJob(
     throw new HttpError(409, 'errors.extractionApproveNotAllowed');
   }
 
-  await assertSubscriptionAllowsActions(user.venueId);
+  await assertBranchMutationAllowed(user.venueId, branchId);
   const extractedMenu = input.extractedMenu ?? (job.extractedMenu as ExtractedMenu | null);
 
   if (!extractedMenu) {

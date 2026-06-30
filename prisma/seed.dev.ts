@@ -107,85 +107,211 @@ async function upsertItemPrices(itemId: string) {
   );
 }
 
-async function seedPlanLimits() {
+async function seedPlanCatalog() {
   const plans = [
     {
-      plan: 'FREE',
-      displayName: { ar: 'Free', en: 'Free' },
+      code: 'FREE',
+      publicName: { ar: 'Wasla Lite', en: 'Wasla Lite' },
+      internalName: 'Wasla Lite',
       description: {
-        ar: 'Starter trial limits for one branch.',
-        en: 'Starter trial limits for one branch.',
+        ar: 'Forever-free Menu SaaS essentials.',
+        en: 'Forever-free Menu SaaS essentials.',
       },
-      branchLimit: 1,
-      extractionMonthlyLimit: 1,
-      extractionMaxImages: 2,
-      customQrBranding: false,
-      advancedAnalytics: false,
+      priceAnnualEgp: 0,
+      displayOrder: 10,
+      active: true,
+      comingSoon: false,
     },
     {
-      plan: 'MENU_STARTER',
-      displayName: { ar: 'Menu Starter', en: 'Menu Starter' },
-      description: { ar: 'Core menu tools for one branch.', en: 'Core menu tools for one branch.' },
-      branchLimit: 1,
-      extractionMonthlyLimit: 10,
-      extractionMaxImages: 4,
-      customQrBranding: false,
-      advancedAnalytics: false,
+      code: 'MENU_STARTER',
+      publicName: { ar: 'Wasla Starter', en: 'Wasla Starter' },
+      internalName: 'Wasla Starter',
+      description: { ar: 'Affordable menu digitization.', en: 'Affordable menu digitization.' },
+      priceAnnualEgp: 250,
+      displayOrder: 20,
+      active: true,
+      comingSoon: false,
     },
     {
-      plan: 'MENU_PRO',
-      displayName: { ar: 'Menu Pro', en: 'Menu Pro' },
+      code: 'MENU_PRO',
+      publicName: { ar: 'Wasla Pro', en: 'Wasla Pro' },
+      internalName: 'Wasla Pro',
       description: {
-        ar: 'More extraction capacity and QR branding.',
-        en: 'More extraction capacity and QR branding.',
+        ar: 'Higher AI and analytics capacity.',
+        en: 'Higher AI and analytics capacity.',
       },
-      branchLimit: 3,
-      extractionMonthlyLimit: 50,
-      extractionMaxImages: 8,
-      customQrBranding: true,
-      advancedAnalytics: true,
+      priceAnnualEgp: 600,
+      displayOrder: 30,
+      active: true,
+      comingSoon: false,
     },
     {
-      plan: 'MENU_MULTI_BRANCH',
-      displayName: { ar: 'Menu Multi Branch', en: 'Menu Multi Branch' },
+      code: 'MENU_MULTI_BRANCH',
+      publicName: { ar: 'Wasla Business', en: 'Wasla Business' },
+      internalName: 'Wasla Business',
       description: {
-        ar: 'Menu tools for growing multi-branch venues.',
-        en: 'Menu tools for growing multi-branch venues.',
+        ar: 'For growing multi-branch venues.',
+        en: 'For growing multi-branch venues.',
       },
-      branchLimit: 10,
-      extractionMonthlyLimit: 100,
-      extractionMaxImages: 8,
-      customQrBranding: true,
-      advancedAnalytics: true,
+      priceAnnualEgp: 1200,
+      displayOrder: 40,
+      active: true,
+      comingSoon: false,
     },
     {
-      plan: 'WASLA_COMPLETE',
-      displayName: { ar: 'Wasla Complete', en: 'Wasla Complete' },
+      code: 'WASLA_COMPLETE',
+      publicName: { ar: 'Wasla Suite', en: 'Wasla Suite' },
+      internalName: 'Wasla Suite',
       description: {
-        ar: 'Complete Wasla plan, with finance reserved for Release 2.',
-        en: 'Complete Wasla plan, with finance reserved for Release 2.',
+        ar: 'Premium suite tier for Release 2.',
+        en: 'Premium suite tier for Release 2.',
       },
-      branchLimit: 20,
-      extractionMonthlyLimit: 100,
-      extractionMaxImages: 8,
-      customQrBranding: true,
-      advancedAnalytics: true,
+      priceAnnualEgp: null,
+      displayOrder: 50,
+      active: true,
+      comingSoon: true,
     },
+  ] as const;
+  const features = [
+    ['BRANCH_LIMIT', { ar: 'Branches', en: 'Branches' }, 'NUMBER', 'branches', 10],
+    [
+      'GEMINI_EXTRACTIONS_MONTHLY',
+      { ar: 'Gemini extractions', en: 'Gemini extractions' },
+      'NUMBER',
+      'requests/month',
+      20,
+    ],
+    [
+      'GEMINI_IMAGES_PER_EXTRACTION',
+      { ar: 'Images per extraction', en: 'Images per extraction' },
+      'NUMBER',
+      'images/request',
+      30,
+    ],
+    [
+      'ANALYTICS_HISTORY_DAYS',
+      { ar: 'Analytics history', en: 'Analytics history' },
+      'NUMBER',
+      'days',
+      40,
+    ],
+    [
+      'ADVANCED_ANALYTICS',
+      { ar: 'Advanced analytics', en: 'Advanced analytics' },
+      'BOOLEAN',
+      null,
+      50,
+    ],
+    ['QR_BRANDING', { ar: 'QR branding', en: 'QR branding' }, 'TEXT', null, 60],
+    ['CUSTOM_QR_ASSETS', { ar: 'Custom QR assets', en: 'Custom QR assets' }, 'BOOLEAN', null, 70],
+    ['STAFF_USERS', { ar: 'Staff users', en: 'Staff users' }, 'NUMBER', 'users', 80],
+    ['LANGUAGES', { ar: 'Languages', en: 'Languages' }, 'NUMBER', 'languages', 90],
+    ['FINANCE_MODULE', { ar: 'Finance module', en: 'Finance module' }, 'BOOLEAN', null, 100],
   ] as const;
 
   await Promise.all(
     plans.map((plan) =>
-      prisma.planLimit.upsert({
-        where: { plan: plan.plan },
+      prisma.plan.upsert({
+        where: { code: plan.code },
         update: plan,
         create: plan,
       }),
     ),
   );
+  await Promise.all(
+    features.map(([key, name, valueType, unit, displayOrder]) =>
+      prisma.feature.upsert({
+        where: { key },
+        update: { name, valueType, unit, displayOrder, active: true },
+        create: { key, name, valueType, unit, displayOrder, active: true },
+      }),
+    ),
+  );
+
+  const planRows = await prisma.plan.findMany();
+  const featureRows = await prisma.feature.findMany();
+  const planByCode = new Map(planRows.map((plan) => [plan.code, plan]));
+  const featureByKey = new Map(featureRows.map((feature) => [feature.key, feature]));
+  const mappingFor = (code: string, key: string) => {
+    const values: Record<
+      string,
+      Record<string, { valueInt?: number; valueBool?: boolean; valueString?: string }>
+    > = {
+      FREE: {
+        BRANCH_LIMIT: { valueInt: 1 },
+        GEMINI_EXTRACTIONS_MONTHLY: { valueInt: 0 },
+        GEMINI_IMAGES_PER_EXTRACTION: { valueInt: 0 },
+        ANALYTICS_HISTORY_DAYS: { valueInt: 7 },
+        QR_BRANDING: { valueString: 'WASLA_SIGNED' },
+        STAFF_USERS: { valueInt: 2 },
+        LANGUAGES: { valueInt: 1 },
+      },
+      MENU_STARTER: {
+        BRANCH_LIMIT: { valueInt: 1 },
+        GEMINI_EXTRACTIONS_MONTHLY: { valueInt: 2 },
+        GEMINI_IMAGES_PER_EXTRACTION: { valueInt: 3 },
+        ANALYTICS_HISTORY_DAYS: { valueInt: 30 },
+        QR_BRANDING: { valueString: 'VENUE_LOGO' },
+        STAFF_USERS: { valueInt: 5 },
+        LANGUAGES: { valueInt: 2 },
+      },
+      MENU_PRO: {
+        BRANCH_LIMIT: { valueInt: 1 },
+        GEMINI_EXTRACTIONS_MONTHLY: { valueInt: 15 },
+        GEMINI_IMAGES_PER_EXTRACTION: { valueInt: 8 },
+        ANALYTICS_HISTORY_DAYS: { valueInt: 90 },
+        ADVANCED_ANALYTICS: { valueBool: true },
+        QR_BRANDING: { valueString: 'VENUE_LOGO' },
+        STAFF_USERS: { valueInt: 10 },
+        LANGUAGES: { valueInt: 999999 },
+      },
+      MENU_MULTI_BRANCH: {
+        BRANCH_LIMIT: { valueInt: 10 },
+        GEMINI_EXTRACTIONS_MONTHLY: { valueInt: 999999 },
+        GEMINI_IMAGES_PER_EXTRACTION: { valueInt: 8 },
+        ANALYTICS_HISTORY_DAYS: { valueInt: 999999 },
+        ADVANCED_ANALYTICS: { valueBool: true },
+        QR_BRANDING: { valueString: 'FULL_CUSTOM' },
+        CUSTOM_QR_ASSETS: { valueBool: true },
+        STAFF_USERS: { valueInt: 999999 },
+        LANGUAGES: { valueInt: 999999 },
+      },
+      WASLA_COMPLETE: {
+        BRANCH_LIMIT: { valueInt: 10 },
+        GEMINI_EXTRACTIONS_MONTHLY: { valueInt: 999999 },
+        GEMINI_IMAGES_PER_EXTRACTION: { valueInt: 8 },
+        ANALYTICS_HISTORY_DAYS: { valueInt: 999999 },
+        ADVANCED_ANALYTICS: { valueBool: true },
+        QR_BRANDING: { valueString: 'FULL_CUSTOM' },
+        CUSTOM_QR_ASSETS: { valueBool: true },
+        STAFF_USERS: { valueInt: 999999 },
+        LANGUAGES: { valueInt: 999999 },
+        FINANCE_MODULE: { valueBool: true },
+      },
+    };
+
+    return values[code]?.[key] ?? {};
+  };
+
+  for (const plan of planRows) {
+    for (const feature of featureRows) {
+      const value = mappingFor(plan.code, feature.key);
+      await prisma.planFeatureMapping.upsert({
+        where: { planId_featureId: { planId: plan.id, featureId: feature.id } },
+        update: {
+          enabled: true,
+          valueInt: value.valueInt,
+          valueBool: value.valueBool,
+          valueString: value.valueString,
+        },
+        create: { planId: plan.id, featureId: feature.id, enabled: true, ...value },
+      });
+    }
+  }
 }
 
 async function main() {
-  await seedPlanLimits();
+  await seedPlanCatalog();
 
   const phone = '+201000000001';
   const passwordHash = await bcrypt.hash('WaslaDev@2026', 12);
@@ -373,8 +499,33 @@ async function main() {
     },
   });
 
+  const superAdminPhone = '+201000000000';
+  const superAdminPasswordHash = await bcrypt.hash('WaslaAdmin@2026', 12);
+  await prisma.user.upsert({
+    where: { phone: superAdminPhone },
+    update: {
+      venueId: null,
+      name: 'Wasla Platform Admin',
+      role: 'SUPER_ADMIN',
+      passwordHash: superAdminPasswordHash,
+      phoneVerifiedAt: new Date(),
+    },
+    create: {
+      venueId: null,
+      phone: superAdminPhone,
+      name: 'Wasla Platform Admin',
+      role: 'SUPER_ADMIN',
+      passwordHash: superAdminPasswordHash,
+      phoneVerifiedAt: new Date(),
+    },
+  });
+
   console.log('[seed:dev] Demo owner ready:', { phone, password: 'WaslaDev@2026' });
   console.log('[seed:dev] Branch staff ready:', { phone: staffPhone, password: 'WaslaStaff@2026' });
+  console.log('[seed:dev] Super admin ready:', {
+    phone: superAdminPhone,
+    password: 'WaslaAdmin@2026',
+  });
 }
 
 main()

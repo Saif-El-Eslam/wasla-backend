@@ -9,6 +9,7 @@ import { HttpError } from '../../common/http/http-error';
 import { resolveLocalizedText } from '../../common/i18n/localized-text';
 import type { LocalizedText } from '../../common/i18n/localized-text';
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
+import { assertQrAssetAllowed } from '../subscription/subscription.service';
 
 export type QrUrlContext = {
   apiOrigin?: string;
@@ -112,7 +113,7 @@ function localizedJson(value: Prisma.JsonValue | null | undefined) {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as LocalizedText) : undefined;
 }
 
-function brandForMenu(menu: QrMenu, requestedLocale?: string) {
+function brandForMenu(menu: QrMenu, requestedLocale?: string, allowVenueLogo = true) {
   const venueName = resolveLocalizedText(localizedJson(menu.branch.venue.name), {
     requestedLocale,
     defaultLocale: menu.branch.venue.defaultLocale,
@@ -125,7 +126,7 @@ function brandForMenu(menu: QrMenu, requestedLocale?: string) {
   return {
     venueName: labelText(venueName, 'Venue'),
     branchName: labelText(branchName, 'Main branch'),
-    venueLogoUrl: menu.branch.logoUrl ?? menu.branch.venue.logoUrl,
+    venueLogoUrl: allowVenueLogo ? (menu.branch.logoUrl ?? menu.branch.venue.logoUrl) : null,
     waslaMark: 'W',
   };
 }
@@ -306,9 +307,14 @@ async function logoComposite(input: {
   return { input: body, left: input.left, top: input.top };
 }
 
-async function renderQrPng(menu: QrMenu, requestedLocale?: string, context: QrUrlContext = {}) {
+async function renderQrPng(
+  menu: QrMenu,
+  requestedLocale?: string,
+  context: QrUrlContext = {},
+  allowVenueLogo = true,
+) {
   const qrRecord = qrRecordPayload(menu, context);
-  const brand = brandForMenu(menu, requestedLocale);
+  const brand = brandForMenu(menu, requestedLocale, allowVenueLogo);
   const qrSize = 720;
   const qrLeft = 120;
   const qrTop = 104;
@@ -398,9 +404,14 @@ function qrSvgModules(targetUrl: string) {
   return rects.join('');
 }
 
-function renderQrSvg(menu: QrMenu, requestedLocale?: string, context: QrUrlContext = {}) {
+function renderQrSvg(
+  menu: QrMenu,
+  requestedLocale?: string,
+  context: QrUrlContext = {},
+  allowVenueLogo = true,
+) {
   const qrRecord = qrRecordPayload(menu, context);
-  const brand = brandForMenu(menu, requestedLocale);
+  const brand = brandForMenu(menu, requestedLocale, allowVenueLogo);
   const venueInitial = escapeXml(brand.venueName.charAt(0).toUpperCase() || 'V');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -426,9 +437,14 @@ function renderQrSvg(menu: QrMenu, requestedLocale?: string, context: QrUrlConte
 </svg>`;
 }
 
-async function renderPosterPng(menu: QrMenu, requestedLocale?: string, context: QrUrlContext = {}) {
-  const qrPng = await renderQrPng(menu, requestedLocale, context);
-  const brand = brandForMenu(menu, requestedLocale);
+async function renderPosterPng(
+  menu: QrMenu,
+  requestedLocale?: string,
+  context: QrUrlContext = {},
+  allowVenueLogo = true,
+) {
+  const qrPng = await renderQrPng(menu, requestedLocale, context, allowVenueLogo);
+  const brand = brandForMenu(menu, requestedLocale, allowVenueLogo);
   const header = Buffer.from(`
     <svg width="1200" height="1600" viewBox="0 0 1200 1600" xmlns="http://www.w3.org/2000/svg">
       <rect width="1200" height="1600" fill="${qrColors.ink}"/>
@@ -469,7 +485,8 @@ export async function getBranchQrAssets(
   context: QrUrlContext = {},
 ) {
   const menu = await getMenuForBranch(session, branchId);
-  const preview = await renderQrPng(menu, requestedLocale, context);
+  const plan = await assertQrAssetAllowed(menu.branch.venueId);
+  const preview = await renderQrPng(menu, requestedLocale, context, plan.qrBranding !== 'WASLA_SIGNED');
 
   return {
     branch: {
@@ -505,6 +522,7 @@ export async function regenerateBranchQr(
   context: QrUrlContext = {},
 ) {
   const menu = await getMenuForBranch(session, branchId);
+  await assertQrAssetAllowed(menu.branch.venueId);
   const nextShortCode = await createShortCode();
 
   await prisma.menuQrCode.update({
@@ -527,12 +545,14 @@ export async function renderBranchQrAsset(
   context: QrUrlContext = {},
 ) {
   const menu = await getMenuForBranch(session, branchId);
+  const plan = await assertQrAssetAllowed(menu.branch.venueId);
+  const allowVenueLogo = plan.qrBranding !== 'WASLA_SIGNED';
 
   if (format === 'svg') {
     return {
       contentType: 'image/svg+xml; charset=utf-8',
       filename: `wasla-${menu.branch.slug}-qr.svg`,
-      body: Buffer.from(renderQrSvg(menu, requestedLocale, context)),
+      body: Buffer.from(renderQrSvg(menu, requestedLocale, context, allowVenueLogo)),
     };
   }
 
@@ -540,13 +560,13 @@ export async function renderBranchQrAsset(
     return {
       contentType: 'image/png',
       filename: `wasla-${menu.branch.slug}-poster.png`,
-      body: await renderPosterPng(menu, requestedLocale, context),
+      body: await renderPosterPng(menu, requestedLocale, context, allowVenueLogo),
     };
   }
 
   return {
     contentType: 'image/png',
     filename: `wasla-${menu.branch.slug}-qr.png`,
-    body: await renderQrPng(menu, requestedLocale, context),
+    body: await renderQrPng(menu, requestedLocale, context, allowVenueLogo),
   };
 }

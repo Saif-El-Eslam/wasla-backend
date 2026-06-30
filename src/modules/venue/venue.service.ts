@@ -3,6 +3,7 @@ import { HttpError } from '../../common/http/http-error';
 import type { LocalizedText } from '../../common/i18n/localized-text';
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
 import { deleteImagesByUrl, imageUrlChanged } from '../../storage/image-storage.service';
+import { assertLanguageLimitAllowed, assertVenueCanMutate } from '../subscription/subscription.service';
 import type { z } from 'zod';
 import type { setupVenueSchema, updateVenueSchema } from './venue.schemas';
 
@@ -62,7 +63,7 @@ export async function setupVenue(session: SessionPayload | undefined, input: z.i
         coverUrl: input.coverUrl || null,
         description: input.description,
         defaultLocale: input.defaultLocale,
-        supportedLocales: input.supportedLocales,
+        supportedLocales: [input.defaultLocale],
         phone: input.phone,
         whatsapp: input.whatsapp,
         address: input.address,
@@ -114,6 +115,8 @@ export async function updateMyVenue(session: SessionPayload | undefined, input: 
   if (!user?.venueId) {
     throw new HttpError(404, 'errors.venueRequired');
   }
+  await assertVenueCanMutate(user.venueId);
+  await assertLanguageLimitAllowed(user.venueId, input.supportedLocales);
 
   const currentVenue = await prisma.venue.findUnique({
     where: { id: user.venueId },

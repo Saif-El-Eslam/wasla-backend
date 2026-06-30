@@ -4,6 +4,7 @@ import { requireBranchAccess } from '../../common/auth/branch-access';
 import { HttpError } from '../../common/http/http-error';
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
 import { deleteImageByUrl, deleteImagesByUrl, imageUrlChanged } from '../../storage/image-storage.service';
+import { assertBranchMutationAllowed } from '../subscription/subscription.service';
 import type { z } from 'zod';
 import type {
   createCategorySchema,
@@ -18,7 +19,8 @@ import type {
 } from './menu.schemas';
 
 async function requireBranchMenu(session: SessionPayload | undefined, branchId: string) {
-  await requireBranchAccess(session, branchId);
+  const { user } = await requireBranchAccess(session, branchId);
+  await assertBranchMutationAllowed(user.venueId, branchId);
   const menu = await prisma.menu.findUnique({
     where: { branchId },
   });
@@ -106,7 +108,8 @@ export async function createBranchMenu(
   branchId: string,
   input: z.infer<typeof createMenuSchema>,
 ) {
-  await requireBranchAccess(session, branchId);
+  const { user } = await requireBranchAccess(session, branchId);
+  await assertBranchMutationAllowed(user.venueId, branchId);
   const shortCode = crypto.randomUUID().slice(0, 8);
 
   return prisma.menu.create({

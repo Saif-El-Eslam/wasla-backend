@@ -2,6 +2,7 @@ import { AnalyticsEventType } from '@prisma/client';
 import { prisma } from '../../database/prisma';
 import { branchScopeWhere, requireAccessUser, requireBranchAccess } from '../../common/auth/branch-access';
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
+import { assertAnalyticsAllowed } from '../subscription/subscription.service';
 import type { z } from 'zod';
 import type { analyticsQuerySchema } from './analytics.schemas';
 
@@ -108,12 +109,15 @@ async function getAnalyticsFallback(
 export async function getAnalyticsSummary(
   session: SessionPayload | undefined,
   query: z.infer<typeof analyticsQuerySchema>,
+  options: { advanced?: boolean } = {},
 ) {
   const user = await requireAccessUser(session);
-  const days = query.period === '30d' ? 30 : 7;
+  const days = query.period === 'all' ? 999999 : query.period === '90d' ? 90 : query.period === '30d' ? 30 : 7;
+  await assertAnalyticsAllowed(user.venueId, days, Boolean(options.advanced));
   const now = new Date();
-  const currentStart = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-  const previousStart = new Date(now.getTime() - days * 2 * 24 * 60 * 60 * 1000);
+  const effectiveDays = query.period === 'all' ? 3650 : days;
+  const currentStart = new Date(now.getTime() - effectiveDays * 24 * 60 * 60 * 1000);
+  const previousStart = new Date(now.getTime() - effectiveDays * 2 * 24 * 60 * 60 * 1000);
 
   const branches = query.branchId
     ? [(await requireBranchAccess(session, query.branchId)).branch]
@@ -167,9 +171,9 @@ export async function getAnalyticsSummary(
     }),
   ) as Record<MetricKey, { current: number; previous: number; change: number }>;
 
-  const series = Array.from({ length: Math.min(days, 14) }, (_, index) => {
+  const series = Array.from({ length: Math.min(effectiveDays, 14) }, (_, index) => {
     const date = new Date(now);
-    date.setDate(now.getDate() - (Math.min(days, 14) - index - 1));
+    date.setDate(now.getDate() - (Math.min(effectiveDays, 14) - index - 1));
     const key = dayKey(date);
     const dayEvents = events.filter((event) => dayKey(event.createdAt) === key);
 
@@ -208,5 +212,33 @@ export async function getAnalyticsSummary(
     topItems: Object.values(itemViews)
       .sort((a, b) => b.views - a.views)
       .slice(0, 5),
+  };
+}
+
+export async function getBasicAnalyticsSummary(
+  session: SessionPayload | undefined,
+  query: z.infer<typeof analyticsQuerySchema>,
+) {
+  const analytics = await getAnalyticsSummary(session, query, { advanced: false });
+
+  return {
+    period: analytics.period,
+    branchId: analytics.branchId,
+    totals: {
+      views: analytics.metrics.views.current,
+      scans: analytics.metrics.scans.current,
+      actionClicks:
+        analytics.metrics.whatsapp.current +
+        analytics.metrics.calls.current +
+        analytics.metrics.maps.current,
+    },
+    metrics: {
+      views: analytics.metrics.views,
+      scans: analytics.metrics.scans,
+      whatsapp: analytics.metrics.whatsapp,
+      calls: analytics.metrics.calls,
+      maps: analytics.metrics.maps,
+    },
+    series: analytics.series,
   };
 }

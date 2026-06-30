@@ -5,6 +5,7 @@ import { requireVenueAdmin } from '../../common/auth/branch-access';
 import { HttpError } from '../../common/http/http-error';
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
 import { buildPaginationMeta, type PaginationOptions } from '../../common/pagination/pagination';
+import { assertStaffUserCreateAllowed, assertVenueCanMutate } from '../subscription/subscription.service';
 import type { z } from 'zod';
 import type { createVenueUserSchema, updateUserBranchesSchema } from './user.schemas';
 
@@ -128,6 +129,7 @@ export async function createVenueUser(
 ) {
   const admin = await requireVenueAdmin(session);
   const branchIds = Array.from(new Set(input.branchIds));
+  await assertStaffUserCreateAllowed(admin.venueId);
 
   if (input.role === 'STAFF' && branchIds.length === 0) {
     throw new HttpError(400, 'errors.branchAssignmentRequired');
@@ -169,6 +171,7 @@ export async function updateUserBranches(
 ) {
   const admin = await requireVenueAdmin(session);
   const branchIds = Array.from(new Set(input.branchIds));
+  await assertVenueCanMutate(admin.venueId);
 
   const user = await prisma.user.findFirst({
     where: {
@@ -213,6 +216,7 @@ export async function updateUserBranches(
 
 export async function deleteVenueUser(session: SessionPayload | undefined, userId: string) {
   const admin = await requireVenueAdmin(session);
+  await assertVenueCanMutate(admin.venueId);
 
   if (admin.id === userId) {
     throw new HttpError(400, 'errors.cannotDeleteSelf');

@@ -14,29 +14,80 @@ enum SubscriptionStatus {
   EXPIRED
 }
 
+enum PaymentProvider {
+  MANUAL
+  PAYMOB
+}
+
 model Subscription {
   id                String              @id @default(uuid())
   venueId           String              @unique
   plan              MenuPlan            @default(FREE)
   status            SubscriptionStatus  @default(TRIALING)
+  paymentProvider   PaymentProvider     @default(MANUAL)
   currentPeriodEnds DateTime?
+  notes             String?
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
 
   venue             Venue               @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  planRecord        Plan                @relation(fields: [plan], references: [code])
+
+  @@index([plan])
+  @@index([status, currentPeriodEnds])
 }
 
-model PlanLimit {
-  id                       String    @id @default(uuid())
-  plan                     MenuPlan  @unique
-  displayName              Json
-  description              Json?
-  branchLimit              Int       @default(1)
-  extractionMonthlyLimit   Int       @default(0)
-  extractionMaxImages      Int       @default(0)
-  customQrBranding         Boolean   @default(false)
-  advancedAnalytics        Boolean   @default(false)
-  active                   Boolean   @default(true)
-  createdAt                DateTime  @default(now())
-  updatedAt                DateTime  @updatedAt
+model Plan {
+  id              String                @id @default(uuid())
+  code            MenuPlan              @unique
+  publicName      Json
+  internalName    String
+  description     Json?
+  priceAnnualEgp  Int?
+  displayOrder    Int                   @default(0)
+  active          Boolean               @default(true)
+  comingSoon      Boolean               @default(false)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  featureMappings PlanFeatureMapping[]
+  subscriptions   Subscription[]
+
+  @@index([active, displayOrder])
+}
+
+model Feature {
+  id              String                @id @default(uuid())
+  key             String                @unique
+  name            Json
+  description     Json?
+  valueType       String                @default("BOOLEAN")
+  unit            String?
+  displayOrder    Int                   @default(0)
+  active          Boolean               @default(true)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  planMappings    PlanFeatureMapping[]
+
+  @@index([active, displayOrder])
+}
+
+model PlanFeatureMapping {
+  id             String    @id @default(uuid())
+  planId         String
+  featureId      String
+  enabled        Boolean   @default(true)
+  valueInt       Int?
+  valueBool      Boolean?
+  valueString    String?
+  valueJson      Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  plan           Plan      @relation(fields: [planId], references: [id], onDelete: Cascade)
+  feature        Feature   @relation(fields: [featureId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, featureId])
+  @@index([featureId])
 }

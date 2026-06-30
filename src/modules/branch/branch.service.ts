@@ -10,6 +10,7 @@ import {
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
 import { buildPaginationMeta, type PaginationOptions } from '../../common/pagination/pagination';
 import { deleteImagesByUrl, imageUrlChanged } from '../../storage/image-storage.service';
+import { assertBranchCreateAllowed, assertBranchMutationAllowed, assertVenueCanMutate } from '../subscription/subscription.service';
 import type { z } from 'zod';
 import type { createBranchSchema, updateBranchSchema } from './branch.schemas';
 
@@ -279,6 +280,7 @@ export async function createBranch(
   input: z.infer<typeof createBranchSchema>,
 ) {
   const { venueId } = await requireVenueAdmin(session);
+  await assertBranchCreateAllowed(venueId);
 
   return prisma.$transaction(async (tx) => {
     const shortCode = crypto.randomUUID().slice(0, 8);
@@ -322,6 +324,7 @@ export async function updateBranch(
 ) {
   const { user } = await requireBranchAccess(session, branchId);
   const venueId = user.venueId;
+  await assertBranchMutationAllowed(venueId, branchId);
   const branch = await prisma.branch.findFirst({
     where: { id: branchId, venueId },
   });
@@ -366,6 +369,7 @@ export async function updateBranch(
 
 export async function setMainBranch(session: SessionPayload | undefined, branchId: string) {
   const { venueId } = await requireVenueAdmin(session);
+  await assertVenueCanMutate(venueId);
   const branch = await prisma.branch.findFirst({
     where: { id: branchId, venueId },
   });
@@ -389,6 +393,7 @@ export async function setMainBranch(session: SessionPayload | undefined, branchI
 
 export async function deleteBranch(session: SessionPayload | undefined, branchId: string) {
   const { venueId } = await requireVenueAdmin(session);
+  await assertVenueCanMutate(venueId);
   const branch = await prisma.branch.findFirst({
     where: { id: branchId, venueId },
     include: {
