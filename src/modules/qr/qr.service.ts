@@ -38,6 +38,8 @@ const qrColors = {
   stone: '#1c1917',
   muted: '#78716c',
 };
+const qrFontFamily =
+  'DejaVu Sans, Noto Sans Arabic, Noto Sans, Tahoma, Arial, Helvetica, sans-serif';
 
 function firstFrontendOrigin() {
   return env.FRONTEND_ORIGIN.split(',')[0]?.trim() || 'http://localhost:3000';
@@ -91,7 +93,10 @@ function shortUrl(shortCode: string, context: QrUrlContext = {}, value?: string 
 }
 
 function assetUrl(branchId: string, format: QrFormat, context: QrUrlContext = {}) {
-  const path = format === 'poster' ? `/branches/${branchId}/qr/poster.png` : `/branches/${branchId}/qr.${format}`;
+  const path =
+    format === 'poster'
+      ? `/branches/${branchId}/qr/poster.png`
+      : `/branches/${branchId}/qr.${format}`;
   return absoluteApiUrl(path, context);
 }
 
@@ -104,13 +109,23 @@ function escapeXml(value: string) {
     .replace(/'/g, '&apos;');
 }
 
+function textDirection(value: string) {
+  return /[\u0590-\u08FF]/.test(value) ? 'rtl' : 'ltr';
+}
+
+function textAttrs(value = '') {
+  return `font-family="${qrFontFamily}" direction="${textDirection(value)}" unicode-bidi="plaintext"`;
+}
+
 function labelText(value: string, fallback: string, maxLength = 36) {
   const text = value.trim() || fallback;
   return text.length > maxLength ? `${text.slice(0, maxLength - 1)}...` : text;
 }
 
 function localizedJson(value: Prisma.JsonValue | null | undefined) {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as LocalizedText) : undefined;
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as LocalizedText)
+    : undefined;
 }
 
 function brandForMenu(menu: QrMenu, requestedLocale?: string, allowVenueLogo = true) {
@@ -230,7 +245,7 @@ function centerMarkSvg(size: number) {
       <rect x="0" y="0" width="${size}" height="${size}" rx="${radius}" fill="#ffffff"/>
       <rect x="8" y="8" width="${size - 16}" height="${size - 16}" rx="${radius - 5}" fill="${qrColors.ink}"/>
       <text x="50%" y="54%" text-anchor="middle" dominant-baseline="middle"
-        font-family="Arial, Helvetica, sans-serif" font-size="${fontSize}" font-weight="900" fill="#ffffff">W</text>
+        ${textAttrs('W')} font-size="${fontSize}" font-weight="900" fill="#ffffff">W</text>
     </svg>
   `);
 }
@@ -259,11 +274,19 @@ async function fetchLogo(url: string | null | undefined) {
   }
 }
 
-function brandFooterSvg(input: { width: number; height: number; venueName: string; branchName: string; logoInitial: string }) {
+function brandFooterSvg(input: {
+  width: number;
+  height: number;
+  venueName: string;
+  branchName: string;
+  logoInitial: string;
+}) {
   const { width, height, venueName, branchName, logoInitial } = input;
   const safeVenue = escapeXml(labelText(venueName, 'Venue', 34));
   const safeBranch = escapeXml(labelText(branchName, 'Branch', 40));
   const safeInitial = escapeXml(logoInitial || 'V');
+  const venueRtl = textDirection(venueName) === 'rtl';
+  const branchRtl = textDirection(branchName) === 'rtl';
 
   return Buffer.from(`
     <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
@@ -271,10 +294,12 @@ function brandFooterSvg(input: { width: number; height: number; venueName: strin
       <rect x="1" y="1" width="${width - 2}" height="${height - 2}" rx="31" fill="none" stroke="#d6f3ef" stroke-width="2"/>
       <circle cx="68" cy="${height / 2}" r="38" fill="#ccfbf1"/>
       <text x="68" y="${height / 2 + 2}" text-anchor="middle" dominant-baseline="middle"
-        font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="900" fill="${qrColors.ink}">${safeInitial}</text>
-      <text x="124" y="52" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="900" fill="${qrColors.stone}">${safeVenue}</text>
-      <text x="124" y="88" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="${qrColors.muted}">${safeBranch}</text>
-      <text x="${width - 34}" y="${height - 34}" text-anchor="end" font-family="Arial, Helvetica, sans-serif"
+        ${textAttrs(safeInitial)} font-size="34" font-weight="900" fill="${qrColors.ink}">${safeInitial}</text>
+      <text x="${venueRtl ? width - 124 : 124}" y="52" text-anchor="${venueRtl ? 'end' : 'start'}" ${textAttrs(venueName)}
+        font-size="30" font-weight="900" fill="${qrColors.stone}">${safeVenue}</text>
+      <text x="${branchRtl ? width - 124 : 124}" y="88" text-anchor="${branchRtl ? 'end' : 'start'}" ${textAttrs(branchName)}
+        font-size="20" font-weight="700" fill="${qrColors.muted}">${safeBranch}</text>
+      <text x="${width - 34}" y="${height - 34}" text-anchor="end" ${textAttrs('Wasla')}
         font-size="18" font-weight="900" fill="${qrColors.inkSoft}">Wasla</text>
     </svg>
   `);
@@ -332,14 +357,14 @@ async function renderQrPng(
     <svg width="960" height="1160" viewBox="0 0 960 1160" xmlns="http://www.w3.org/2000/svg">
       <rect width="960" height="1160" fill="${qrColors.background}"/>
       <text x="480" y="210" text-anchor="middle" transform="rotate(-24 480 210)"
-        font-family="Arial, Helvetica, sans-serif" font-size="102" font-weight="900" fill="#d6f3ef" opacity="0.42">Wasla</text>
+        ${textAttrs('Wasla')} font-size="102" font-weight="900" fill="#d6f3ef" opacity="0.42">Wasla</text>
       <rect x="72" y="56" width="816" height="1038" rx="44" fill="#ffffff"/>
       <rect x="73" y="57" width="814" height="1036" rx="43" fill="none" stroke="#d9f3ef" stroke-width="2"/>
       <rect x="${qrLeft - 18}" y="${qrTop - 18}" width="${qrSize + 36}" height="${qrSize + 36}" rx="36" fill="#ffffff" stroke="#ecfdf5" stroke-width="8"/>
       <rect x="346" y="74" width="268" height="30" rx="15" fill="#ffffff"/>
-      <text x="480" y="95" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
+      <text x="480" y="95" text-anchor="middle" ${textAttrs('WASLA MENU QR')}
         font-size="18" font-weight="900" letter-spacing="3" fill="${qrColors.inkSoft}">WASLA MENU QR</text>
-      <text x="480" y="1080" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
+      <text x="480" y="1080" text-anchor="middle" ${textAttrs('Scan to open the menu')}
         font-size="18" font-weight="900" fill="${qrColors.muted}">Scan to open the menu</text>
     </svg>
   `);
@@ -445,19 +470,21 @@ async function renderPosterPng(
 ) {
   const qrPng = await renderQrPng(menu, requestedLocale, context, allowVenueLogo);
   const brand = brandForMenu(menu, requestedLocale, allowVenueLogo);
+  const safeVenue = escapeXml(labelText(brand.venueName, 'Venue', 26));
+  const safeBranch = escapeXml(labelText(brand.branchName, 'Branch', 34));
   const header = Buffer.from(`
     <svg width="1200" height="1600" viewBox="0 0 1200 1600" xmlns="http://www.w3.org/2000/svg">
       <rect width="1200" height="1600" fill="${qrColors.ink}"/>
       <text x="600" y="274" text-anchor="middle" transform="rotate(-18 600 274)"
-        font-family="Arial, Helvetica, sans-serif" font-size="150" font-weight="900" fill="#115e59" opacity="0.36">Wasla</text>
-      <text x="600" y="138" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
+        ${textAttrs('Wasla')} font-size="150" font-weight="900" fill="#115e59" opacity="0.36">Wasla</text>
+      <text x="600" y="138" text-anchor="middle" ${textAttrs('SCAN THE MENU')}
         font-size="24" font-weight="900" letter-spacing="4" fill="${qrColors.amber}">SCAN THE MENU</text>
-      <text x="600" y="222" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
-        font-size="68" font-weight="900" fill="#ffffff">${escapeXml(labelText(brand.venueName, 'Venue', 26))}</text>
-      <text x="600" y="274" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
-        font-size="28" font-weight="800" fill="#99f6e4">${escapeXml(labelText(brand.branchName, 'Branch', 34))}</text>
+      <text x="600" y="222" text-anchor="middle" ${textAttrs(brand.venueName)}
+        font-size="68" font-weight="900" fill="#ffffff">${safeVenue}</text>
+      <text x="600" y="274" text-anchor="middle" ${textAttrs(brand.branchName)}
+        font-size="28" font-weight="800" fill="#99f6e4">${safeBranch}</text>
       <rect x="116" y="358" width="968" height="1170" rx="56" fill="#ffffff"/>
-      <text x="600" y="1484" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
+      <text x="600" y="1484" text-anchor="middle" ${textAttrs('Powered by Wasla')}
         font-size="22" font-weight="900" fill="#ccfbf1">Powered by Wasla</text>
     </svg>
   `);
@@ -486,7 +513,12 @@ export async function getBranchQrAssets(
 ) {
   const menu = await getMenuForBranch(session, branchId);
   const plan = await assertQrAssetAllowed(menu.branch.venueId);
-  const preview = await renderQrPng(menu, requestedLocale, context, plan.qrBranding !== 'WASLA_SIGNED');
+  const preview = await renderQrPng(
+    menu,
+    requestedLocale,
+    context,
+    plan.qrBranding !== 'WASLA_SIGNED',
+  );
 
   return {
     branch: {
