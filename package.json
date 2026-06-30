@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "postinstall": "prisma generate",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node -e \"const fs=require('fs');fs.cpSync('assets','dist/assets',{recursive:true,force:true});\"",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\" \"prisma.config.ts\"",
@@ -33,6 +33,7 @@
     "pg": "8.22.0",
     "qrcode": "1.5.4",
     "sharp": "0.35.2",
+    "text-to-svg": "^3.1.5",
     "zod": "4.4.3"
   },
   "devDependencies": {

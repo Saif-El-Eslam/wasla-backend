@@ -1,5 +1,6 @@
 import QRCode from 'qrcode';
 import sharp from 'sharp';
+import TextToSVG from 'text-to-svg';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -42,8 +43,6 @@ const qrColors = {
 };
 const qrFontFamily =
   'DejaVu Sans, Noto Sans Arabic, Noto Sans, Tahoma, Arial, Helvetica, sans-serif';
-const fontName = 'Noto Sans Arabic';
-
 function fontAssetPath(fileName: string) {
   const candidates = [
     path.resolve(process.cwd(), 'assets/fonts', fileName),
@@ -56,6 +55,19 @@ function fontAssetPath(fileName: string) {
 
 const qrFontRegularFile = fontAssetPath('NotoSansArabic-Regular.ttf');
 const qrFontBoldFile = fontAssetPath('NotoSansArabic-Bold.ttf');
+const qrLatinFontRegularFile = fontAssetPath('NotoSans-Regular.ttf');
+const qrLatinFontBoldFile = fontAssetPath('NotoSans-Bold.ttf');
+const textPathRenderers = {
+  arabic: {
+    regular: TextToSVG.loadSync(qrFontRegularFile),
+    bold: TextToSVG.loadSync(qrFontBoldFile),
+  },
+  latin: {
+    regular: TextToSVG.loadSync(qrLatinFontRegularFile),
+    bold: TextToSVG.loadSync(qrLatinFontBoldFile),
+  },
+};
+type TextScript = keyof typeof textPathRenderers;
 
 function firstFrontendOrigin() {
   return env.FRONTEND_ORIGIN.split(',')[0]?.trim() || 'http://localhost:3000';
@@ -133,8 +145,41 @@ function textAttrs(value = '') {
   return `font-family="${qrFontFamily}" direction="${textDirection(value)}" unicode-bidi="plaintext"`;
 }
 
-function textForRaster(value: string) {
-  return textDirection(value) === 'rtl' ? `\u202B${value}\u202C` : value;
+function glyphScript(glyph: string, fallback: TextScript): TextScript {
+  if (/[\u0590-\u08FF]/.test(glyph)) {
+    return 'arabic';
+  }
+
+  if (/\s/.test(glyph)) {
+    return fallback;
+  }
+
+  return 'latin';
+}
+
+function textPathSegments(text: string): { script: TextScript; text: string }[] {
+  const fallbackScript = textDirection(text) === 'rtl' ? 'arabic' : 'latin';
+  const segments: { script: TextScript; text: string }[] = [];
+
+  for (const glyph of [...text]) {
+    const script = glyphScript(glyph, segments.at(-1)?.script ?? fallbackScript);
+    const previous = segments.at(-1);
+
+    if (previous?.script === script) {
+      previous.text += glyph;
+    } else {
+      segments.push({ script, text: glyph });
+    }
+  }
+
+  if (fallbackScript === 'latin') {
+    return segments;
+  }
+
+  return [...segments].reverse().map((segment) => ({
+    ...segment,
+    text: segment.script === 'arabic' ? [...segment.text].reverse().join('') : segment.text,
+  }));
 }
 
 async function rasterText(input: {
@@ -144,22 +189,54 @@ async function rasterText(input: {
   weight?: 'regular' | 'bold';
   width?: number;
   align?: 'left' | 'center' | 'right';
+  opacity?: number;
 }) {
-  const fontfile = input.weight === 'regular' ? qrFontRegularFile : qrFontBoldFile;
-  const raw = await sharp({
-    text: {
-      text: textForRaster(input.text),
-      font: `${fontName} ${input.fontSize}`,
-      fontfile,
-      width: input.width,
-      align: input.align,
-      rgba: true,
-    },
-  })
-    .png()
-    .toBuffer();
+  const segments = textPathSegments(input.text);
+  const paths: string[] = [];
+  let cursor = 0;
+  let height = input.fontSize;
 
-  return sharp(raw).tint(input.color).png().toBuffer();
+  for (const segment of segments) {
+    const renderer = textPathRenderers[segment.script][input.weight ?? 'bold'];
+    const metrics = renderer.getMetrics(segment.text, {
+      fontSize: input.fontSize,
+      anchor: 'left top',
+    });
+    const d = renderer.getD(segment.text, {
+      x: cursor,
+      y: 0,
+      fontSize: input.fontSize,
+      anchor: 'left top',
+    });
+
+    paths.push(`<path d="${d}" fill="${input.color}"/>`);
+    cursor += metrics.width;
+    height = Math.max(height, metrics.height);
+  }
+
+  const svgWidth = Math.max(1, Math.ceil(cursor));
+  const svgHeight = Math.max(1, Math.ceil(height));
+  const svg = `
+    <svg width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}" xmlns="http://www.w3.org/2000/svg">
+      <g${input.opacity !== undefined ? ` opacity="${input.opacity}"` : ''}>
+        ${paths.join('')}
+      </g>
+    </svg>
+  `;
+  const base = await sharp(Buffer.from(svg)).png().toBuffer();
+
+  if (!input.width) {
+    return base;
+  }
+
+  const metadata = await sharp(base).metadata();
+  const width = metadata.width ?? 0;
+
+  if (width <= input.width) {
+    return base;
+  }
+
+  return sharp(base).resize({ width: input.width, withoutEnlargement: true }).png().toBuffer();
 }
 
 async function textComposite(input: {
@@ -488,6 +565,7 @@ async function renderQrPng(
     fontSize: 102,
     color: '#d6f3ef',
     weight: 'bold',
+    opacity: 0.42,
   });
   const footer = await brandFooterPng({
     width: 724,
@@ -506,7 +584,7 @@ async function renderQrPng(
   const composites: sharp.OverlayOptions[] = [
     { input: baseSvg, left: 0, top: 0 },
     {
-      input: await sharp(watermark).ensureAlpha(0.42).rotate(-24, { background: '#00000000' }).png().toBuffer(),
+      input: await sharp(watermark).rotate(-24, { background: '#00000000' }).png().toBuffer(),
       left: 326,
       top: 152,
     },
@@ -629,6 +707,7 @@ async function renderPosterPng(
     fontSize: 150,
     color: '#115e59',
     weight: 'bold',
+    opacity: 0.36,
   });
 
   return sharp({
@@ -642,7 +721,7 @@ async function renderPosterPng(
     .composite([
       { input: header, left: 0, top: 0 },
       {
-        input: await sharp(posterWatermark).ensureAlpha(0.36).rotate(-18, { background: '#00000000' }).png().toBuffer(),
+        input: await sharp(posterWatermark).rotate(-18, { background: '#00000000' }).png().toBuffer(),
         left: 380,
         top: 202,
       },
