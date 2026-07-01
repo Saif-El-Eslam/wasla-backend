@@ -7,6 +7,7 @@ import { Prisma } from '@prisma/client';
 import { resolveLocalizedText } from '../../common/i18n/localized-text';
 import type { LocalizedText } from '../../common/i18n/localized-text';
 import type { QrMenu } from './qr.types';
+import { frontendUrl } from '../../config/env';
 
 type TextWeight = 'regular' | 'bold';
 type TextAlign = 'left' | 'center' | 'right';
@@ -46,21 +47,14 @@ function fontAssetPath(fileName: string) {
 }
 
 function frontendPublicAssetPath(fileName: string) {
-  const candidates = [
-    path.resolve(process.cwd(), '../frontend/public', fileName),
-    path.resolve(process.cwd(), 'frontend/public', fileName),
-    path.resolve(__dirname, '../../../../frontend/public', fileName),
-    path.resolve(__dirname, '../../../frontend/public', fileName),
-  ];
-
-  return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
+  return `${frontendUrl.toString().replace(/\/$/, '')}/${fileName.replace(/^\//, '')}`;
 }
 
 const qrFontRegularFile = fontAssetPath('NotoSansArabic-Regular.ttf');
 const qrFontBoldFile = fontAssetPath('NotoSansArabic-Bold.ttf');
 const qrLatinFontRegularFile = fontAssetPath('NotoSans-Regular.ttf');
 const qrLatinFontBoldFile = fontAssetPath('NotoSans-Bold.ttf');
-const waslaLogoSvgFile = frontendPublicAssetPath('favicon.svg');
+const waslaLogoSvgFiles = [frontendPublicAssetPath('favicon.svg')];
 const textPathRenderers = {
   arabic: {
     regular: TextToSVG.loadSync(qrFontRegularFile),
@@ -257,7 +251,13 @@ async function textComposite(input: {
   const metadata = await sharp(buffer).metadata();
   const width = metadata.width ?? input.width ?? 0;
   const height = metadata.height ?? input.fontSize;
-  const position = anchoredPosition({ x: input.x, y: input.y, width, height, anchor: input.anchor });
+  const position = anchoredPosition({
+    x: input.x,
+    y: input.y,
+    width,
+    height,
+    anchor: input.anchor,
+  });
 
   return {
     input: buffer,
@@ -307,7 +307,8 @@ function qrCopy(useArabic: boolean) {
   return useArabic
     ? {
         wasla: '\u0648\u0635\u0644\u0629',
-        menuQr: '\u0642\u0627\u0626\u0645\u0629 \u0648\u0635\u0644\u0629 \u0627\u0644\u0631\u0642\u0645\u064a\u0647',
+        menuQr:
+          '\u0642\u0627\u0626\u0645\u0629 \u0648\u0635\u0644\u0629 \u0627\u0644\u0631\u0642\u0645\u064a\u0647',
         scanToOpen:
           '\u0627\u0645\u0633\u062d \u0627\u0644\u0643\u0648\u062f \u0644\u062a\u0641\u062a\u062d \u0627\u0644\u0642\u0627\u0626\u0645\u0647',
         posterScan:
@@ -371,19 +372,35 @@ async function fallbackCenterMarkPng(size: number) {
     .toBuffer();
 }
 
-async function centerMarkPng(size: number) {
-  try {
-    if (!existsSync(waslaLogoSvgFile)) {
-      return fallbackCenterMarkPng(size);
-    }
+async function loadRemoteAssetBuffer(url: string) {
+  const response = await fetch(url);
 
-    return await sharp(readFileSync(waslaLogoSvgFile))
-      .resize(size, size, { fit: 'contain', background: '#00000000' })
-      .png()
-      .toBuffer();
-  } catch {
-    return fallbackCenterMarkPng(size);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch asset ${url}: ${response.status}`);
   }
+
+  return Buffer.from(await response.arrayBuffer());
+}
+
+async function centerMarkPng(size: number) {
+  for (const logoFile of waslaLogoSvgFiles) {
+    try {
+      const logoBuffer = logoFile.startsWith('http')
+        ? await loadRemoteAssetBuffer(logoFile)
+        : readFileSync(logoFile);
+      console.log('logoFile');
+
+      return await sharp(logoBuffer)
+        .resize(size, size, { fit: 'contain', background: '#00000000' })
+        .png()
+        .toBuffer();
+    } catch (error) {
+      console.error('Failed logoFile', logoFile, error);
+      continue;
+    }
+  }
+
+  return fallbackCenterMarkPng(size);
 }
 
 async function fetchLogo(url: string | null | undefined) {
@@ -707,7 +724,13 @@ async function svgTextImage(input: {
   const metadata = await sharp(buffer).metadata();
   const width = metadata.width ?? input.width ?? 0;
   const height = metadata.height ?? input.fontSize;
-  const position = anchoredPosition({ x: input.x, y: input.y, width, height, anchor: input.anchor });
+  const position = anchoredPosition({
+    x: input.x,
+    y: input.y,
+    width,
+    height,
+    anchor: input.anchor,
+  });
   const image = `
     <image
       href="data:image/png;base64,${buffer.toString('base64')}"
