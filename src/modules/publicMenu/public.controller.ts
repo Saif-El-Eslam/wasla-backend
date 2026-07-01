@@ -35,6 +35,6 @@ export const recordPublicAnalyticsController = asyncHandler(async (req, res) => 
 export const redirectPublicQrController = asyncHandler(async (req, res) => {
   const result = await resolvePublicQrShortCode(String(req.params.code));
 
-  const url = new URL(`/en/venues/${result.venueSlug}/${result.branchSlug}/menu`, frontendUrl);
+  const url = new URL(`/venues/${result.venueSlug}/${result.branchSlug}/menu`, frontendUrl);
   res.redirect(302, url.toString());
 });
