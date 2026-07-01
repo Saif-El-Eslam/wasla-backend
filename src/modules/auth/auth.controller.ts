@@ -1,6 +1,7 @@
 import { env } from '../../config/env';
 import { asyncHandler } from '../../common/http/async-handler';
 import { created, ok } from '../../common/http/response';
+import type { CookieOptions } from 'express';
 import {
   getCurrentUser,
   login,
@@ -11,10 +12,36 @@ import {
   verifyOtp,
 } from './auth.service';
 
-const cookieOptions = {
+function sessionMaxAgeMs(expiresIn: string) {
+  const match = expiresIn.trim().match(/^(\d+)(ms|s|m|h|d)?$/i);
+
+  if (!match) {
+    return undefined;
+  }
+
+  const value = Number(match[1]);
+  const unit = match[2]?.toLowerCase() ?? 's';
+  const multipliers: Record<string, number> = {
+    ms: 1,
+    s: 1000,
+    m: 60 * 1000,
+    h: 60 * 60 * 1000,
+    d: 24 * 60 * 60 * 1000,
+  };
+
+  return value * multipliers[unit];
+}
+
+const baseCookieOptions: CookieOptions = {
   httpOnly: true,
-  sameSite: 'none' as const, //'lax' as const,
-  secure: true, //env.NODE_ENV === 'production',
+  sameSite: 'lax',
+  secure: env.NODE_ENV === 'production',
+  path: '/',
+};
+
+const sessionCookieOptions: CookieOptions = {
+  ...baseCookieOptions,
+  maxAge: sessionMaxAgeMs(env.JWT_EXPIRES_IN),
 };
 
 export const registerController = asyncHandler(async (req, res) => {
@@ -24,13 +51,13 @@ export const registerController = asyncHandler(async (req, res) => {
 
 export const loginController = asyncHandler(async (req, res) => {
   const result = await login(req.body);
-  res.cookie(env.COOKIE_NAME, result.token, cookieOptions);
+  res.cookie(env.COOKIE_NAME, result.token, sessionCookieOptions);
   ok(res, { user: result.user });
 });
 
 export const verifyOtpController = asyncHandler(async (req, res) => {
   const result = await verifyOtp(req.body);
-  res.cookie(env.COOKIE_NAME, result.token, cookieOptions);
+  res.cookie(env.COOKIE_NAME, result.token, sessionCookieOptions);
   ok(res, { user: result.user });
 });
 
@@ -55,6 +82,6 @@ export const updatePasswordController = asyncHandler(async (req, res) => {
 });
 
 export const logoutController = asyncHandler(async (_req, res) => {
-  res.clearCookie(env.COOKIE_NAME, cookieOptions);
+  res.clearCookie(env.COOKIE_NAME, baseCookieOptions);
   ok(res, { loggedOut: true });
 });
