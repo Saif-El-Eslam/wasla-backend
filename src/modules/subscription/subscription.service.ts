@@ -1,6 +1,7 @@
 import {
   ExtractionJobStatus,
   MenuPlan,
+  PaymentProvider,
   Prisma,
   SubscriptionStatus,
   type UserRole,
@@ -67,16 +68,104 @@ async function ensurePlanCatalogExists() {
   }
 }
 
+type SubscriptionHistorySnapshot = {
+  id: string;
+  venueId: string;
+  plan: MenuPlan;
+  status: SubscriptionStatus;
+  paymentProvider: PaymentProvider;
+  currentPeriodEnds: Date | null;
+  notes: string | null;
+};
+
+async function recordSubscriptionHistory(
+  tx: Prisma.TransactionClient,
+  subscription: SubscriptionHistorySnapshot,
+  changeType: string,
+  changedById?: string | null,
+) {
+  const planRecord = await tx.plan.findUnique({
+    where: { code: subscription.plan },
+    select: { priceAnnualEgp: true },
+  });
+
+  await tx.subscriptionHistory.create({
+    data: {
+      subscriptionId: subscription.id,
+      venueId: subscription.venueId,
+      plan: subscription.plan,
+      status: subscription.status,
+      paymentProvider: subscription.paymentProvider,
+      annualAmountEgp: planRecord?.priceAnnualEgp ?? null,
+      currentPeriodEnds: subscription.currentPeriodEnds,
+      notes: subscription.notes,
+      changeType,
+      changedById: changedById ?? null,
+    },
+  });
+}
+
+function isPaidHistoryEntry(subscription: {
+  plan: MenuPlan;
+  status: SubscriptionStatus;
+  annualAmountEgp: number | null;
+}) {
+  return (
+    isPaidActiveSubscription(subscription) &&
+    (subscription.annualAmountEgp ?? 0) > 0
+  );
+}
+
+function isPaidActiveSubscription(subscription: { plan: MenuPlan; status: SubscriptionStatus }) {
+  return (
+    subscription.plan !== MenuPlan.FREE &&
+    subscription.status !== SubscriptionStatus.CANCELED &&
+    subscription.status !== SubscriptionStatus.EXPIRED
+  );
+}
+
+function calculateTotalRevenueFromHistory(
+  history: Array<{
+    venueId: string;
+    plan: MenuPlan;
+    status: SubscriptionStatus;
+    annualAmountEgp: number | null;
+  }>,
+) {
+  const openPaidVenues = new Set<string>();
+
+  return history.reduce((sum, subscription) => {
+    if (!isPaidHistoryEntry(subscription)) {
+      openPaidVenues.delete(subscription.venueId);
+      return sum;
+    }
+
+    if (openPaidVenues.has(subscription.venueId)) {
+      return sum;
+    }
+
+    openPaidVenues.add(subscription.venueId);
+    return sum + (subscription.annualAmountEgp ?? 0);
+  }, 0);
+}
+
 async function normalizeSubscription(venueId: string) {
   await ensurePlanCatalogExists();
   const subscription =
     (await prisma.subscription.findUnique({ where: { venueId } })) ??
-    (await prisma.subscription.create({
-      data: {
-        venueId,
-        plan: MenuPlan.FREE,
-        status: SubscriptionStatus.ACTIVE,
-      },
+    (await prisma.$transaction(async (tx) => {
+      const created = await tx.subscription.create({
+        data: {
+          venueId,
+          plan: MenuPlan.FREE,
+          status: SubscriptionStatus.ACTIVE,
+          paymentProvider: PaymentProvider.MANUAL,
+        },
+      });
+
+      await recordSubscriptionHistory(tx, created, 'SYSTEM_CREATE_FREE');
+
+      return created;
     }));
 
   const periodExpired =
@@ -85,13 +174,20 @@ async function normalizeSubscription(venueId: string) {
     subscription.status !== 'PAST_DUE';
 
   if (subscription.status === 'CANCELED' || subscription.status === 'EXPIRED' || periodExpired) {
-    return prisma.subscription.update({
-      where: { venueId },
-      data: {
-        plan: MenuPlan.FREE,
-        status: SubscriptionStatus.ACTIVE,
-        currentPeriodEnds: null,
-      },
+    return prisma.$transaction(async (tx) => {
+      const updated = await tx.subscription.update({
+        where: { venueId },
+        data: {
+          plan: MenuPlan.FREE,
+          status: SubscriptionStatus.ACTIVE,
+          paymentProvider: PaymentProvider.MANUAL,
+          currentPeriodEnds: null,
+        },
+      });
+
+      await recordSubscriptionHistory(tx, updated, 'SYSTEM_RESET_FREE');
+
+      return updated;
     });
   }
 
@@ -459,7 +555,7 @@ export async function getAdminSubscriptionOverview(session?: SessionPayload) {
   await requireSuperAdmin(session);
   const now = new Date();
   const soon = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
-  const [venues, subscriptions, expiringSoon] = await Promise.all([
+  const [venues, subscriptions, expiringSoon, history] = await Promise.all([
     prisma.venue.count(),
     prisma.subscription.findMany({
       include: { planRecord: true },
@@ -474,21 +570,42 @@ export async function getAdminSubscriptionOverview(session?: SessionPayload) {
       orderBy: { currentPeriodEnds: 'asc' },
       take: 10,
     }),
+    prisma.subscriptionHistory.findMany({
+      orderBy: [{ venueId: 'asc' }, { sequence: 'asc' }],
+    }),
   ]);
-  const activeRevenue = subscriptions
-    .filter(
-      (subscription) =>
-        subscription.plan !== 'FREE' &&
-        subscription.status !== 'CANCELED' &&
-        subscription.status !== 'EXPIRED',
-    )
-    .reduce((sum, subscription) => sum + (subscription.planRecord.priceAnnualEgp ?? 0), 0);
+  const latestHistoryByVenue = new Map<string, (typeof history)[number]>();
+
+  for (const item of history) {
+    latestHistoryByVenue.set(item.venueId, item);
+  }
+
+  const activeRevenue = latestHistoryByVenue.size
+    ? Array.from(latestHistoryByVenue.values())
+        .filter(
+          (subscription) =>
+            subscription.plan !== 'FREE' &&
+            subscription.status !== 'CANCELED' &&
+            subscription.status !== 'EXPIRED',
+        )
+        .reduce((sum, subscription) => sum + (subscription.annualAmountEgp ?? 0), 0)
+    : subscriptions
+        .filter(
+          (subscription) =>
+            subscription.plan !== 'FREE' &&
+            subscription.status !== 'CANCELED' &&
+            subscription.status !== 'EXPIRED',
+        )
+        .reduce((sum, subscription) => sum + (subscription.planRecord.priceAnnualEgp ?? 0), 0);
+
+  const totalRevenue = calculateTotalRevenueFromHistory(history);
 
   return {
     metrics: {
       venues,
       subscriptions: subscriptions.length,
       activeRevenueAnnualEgp: activeRevenue,
+      totalRevenueAnnualEgp: totalRevenue,
       paidSubscriptions: subscriptions.filter((subscription) => subscription.plan !== 'FREE')
         .length,
       pastDue: subscriptions.filter((subscription) => subscription.status === 'PAST_DUE').length,
@@ -546,12 +663,41 @@ export async function updateVenueSubscription(
   input: z.infer<typeof updateVenueSubscriptionSchema>,
 ) {
   await requireSuperAdmin(session);
+  const { recreate, ...subscriptionInput } = input;
 
-  return prisma.subscription.upsert({
-    where: { venueId },
-    update: input,
-    create: { venueId, ...input },
-    include: { planRecord: true },
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.subscription.findUnique({
+      where: { venueId },
+    });
+
+    if (recreate && existing && isPaidActiveSubscription(existing)) {
+      await recordSubscriptionHistory(
+        tx,
+        { ...existing, status: SubscriptionStatus.CANCELED },
+        'ADMIN_RECREATE_CANCEL',
+        session?.sub,
+      );
+    }
+
+    const subscription = existing
+      ? await tx.subscription.update({
+          where: { id: existing.id },
+          data: subscriptionInput,
+          include: { planRecord: true },
+        })
+      : await tx.subscription.create({
+          data: { venueId, ...subscriptionInput },
+          include: { planRecord: true },
+        });
+
+    await recordSubscriptionHistory(
+      tx,
+      subscription,
+      recreate || !existing ? 'ADMIN_ASSIGNMENT' : 'ADMIN_UPDATE',
+      session?.sub,
+    );
+
+    return subscription;
   });
 }
 

@@ -32,9 +32,37 @@ model Subscription {
 
   venue             Venue               @relation(fields: [venueId], references: [id], onDelete: Cascade)
   planRecord        Plan                @relation(fields: [plan], references: [code])
+  history           SubscriptionHistory[]
 
   @@index([plan])
   @@index([status, currentPeriodEnds])
+}
+
+model SubscriptionHistory {
+  id                String              @id @default(uuid())
+  sequence          Int                 @unique @default(autoincrement())
+  subscriptionId    String?
+  venueId           String
+  plan              MenuPlan
+  status            SubscriptionStatus
+  paymentProvider   PaymentProvider     @default(MANUAL)
+  annualAmountEgp   Int?
+  currentPeriodEnds DateTime?
+  notes             String?
+  changeType        String              @default("ADMIN_UPDATE")
+  changedById       String?
+  createdAt         DateTime            @default(now())
+
+  subscription      Subscription?       @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  venue             Venue               @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  planRecord        Plan                @relation(fields: [plan], references: [code])
+  changedBy         User?               @relation("SubscriptionHistoryChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
+
+  @@index([subscriptionId, sequence])
+  @@index([venueId, sequence])
+  @@index([plan])
+  @@index([status, currentPeriodEnds])
+  @@index([changedById])
 }
 
 model Plan {
@@ -52,6 +80,7 @@ model Plan {
 
   featureMappings PlanFeatureMapping[]
   subscriptions   Subscription[]
+  subscriptionHistory SubscriptionHistory[]
 
   @@index([active, displayOrder])
 }

@@ -42,6 +42,7 @@ export const updateVenueSubscriptionSchema = z.object({
   currentPeriodEnds: z.coerce.date().nullable().optional(),
   paymentProvider: z.enum(['MANUAL', 'PAYMOB']).default('MANUAL'),
   notes: z.string().max(500).nullable().optional(),
+  recreate: z.boolean().optional(),
 });
 
 export const upsertPlanSchema = z.object({

@@ -35,6 +35,7 @@ model Venue {
   users             User[]
   branches          Branch[]
   subscription      Subscription?
+  subscriptionHistory SubscriptionHistory[]
   analyticsEvents   AnalyticsEventLog[]
 
   @@index([ownerId])

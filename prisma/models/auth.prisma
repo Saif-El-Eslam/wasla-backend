@@ -21,6 +21,7 @@ model User {
   ownedVenues      Venue[]   @relation("VenueOwner")
   otpCodes         OtpCode[]
   branchAccesses   UserBranchAccess[]
+  subscriptionHistoryChanges SubscriptionHistory[] @relation("SubscriptionHistoryChangedBy")
 
   @@index([venueId])
 }
