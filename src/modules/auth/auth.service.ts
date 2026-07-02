@@ -435,6 +435,10 @@ export async function getCurrentUser(session?: SessionPayload) {
     throw new HttpError(401, 'errors.userNotFound');
   }
 
+  if (!user.phoneVerifiedAt) {
+    throw new HttpError(401, 'errors.phoneNotVerified');
+  }
+
   return sanitizeUser(user);
 }
 
