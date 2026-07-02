@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { requireAuth } from '../../common/middleware/auth.middleware';
+import { authenticatedRateLimit } from '../../common/middleware/rate-limit.middleware';
 import { paginationMiddleware } from '../../common/middleware/pagination.middleware';
 import { validateRequest } from '../../common/middleware/validate.middleware';
 import { branchListQuerySchema, branchParamsSchema, createBranchSchema, updateBranchSchema } from './branch.schemas';
@@ -16,7 +17,7 @@ import {
 
 export const branchRouter = Router();
 
-branchRouter.use(requireAuth);
+branchRouter.use(requireAuth, authenticatedRateLimit);
 
 branchRouter.get('/overview', getBranchesOverviewController);
 branchRouter.get('/', paginationMiddleware, validateRequest({ query: branchListQuerySchema }), listBranchesController);

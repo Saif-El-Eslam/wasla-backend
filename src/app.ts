@@ -8,6 +8,7 @@ import { i18nMiddleware } from './common/middleware/i18n.middleware';
 import { notFoundMiddleware } from './common/middleware/not-found.middleware';
 import { requestContextMiddleware } from './common/middleware/request-context.middleware';
 import { requestLoggerMiddleware } from './common/middleware/request-logger.middleware';
+import { apiRateLimit } from './common/middleware/rate-limit.middleware';
 import { analyticsRouter } from './modules/analytics/analytics.routes';
 import { authRouter } from './modules/auth/auth.routes';
 import { branchRouter } from './modules/branch/branch.routes';
@@ -49,6 +50,7 @@ app.use(i18nMiddleware);
 app.use(requestLoggerMiddleware);
 
 const apiRouter = express.Router();
+apiRouter.use(apiRateLimit); // Apply rate limiting to all API routes (overwriting specific rate limits for certain routes if needed)
 apiRouter.use('/health', healthRouter);
 apiRouter.use('/public', publicRouter);
 apiRouter.use('/auth', authRouter);

@@ -1,5 +1,10 @@
 import { Router } from 'express';
 import { requireAuth } from '../../common/middleware/auth.middleware';
+import {
+  authenticatedRateLimit,
+  authRateLimit,
+  codeRateLimit,
+} from '../../common/middleware/rate-limit.middleware';
 import { validateRequest } from '../../common/middleware/validate.middleware';
 import {
   loginController,
@@ -22,11 +27,17 @@ import {
 
 export const authRouter = Router();
 
-authRouter.post('/register', validateRequest({ body: registerSchema }), registerController);
-authRouter.post('/login', validateRequest({ body: loginSchema }), loginController);
-authRouter.post('/verify-otp', validateRequest({ body: verifyOtpSchema }), verifyOtpController);
-authRouter.post('/resend-otp', validateRequest({ body: resendOtpSchema }), resendOtpController);
-authRouter.get('/me', requireAuth, meController);
-authRouter.patch('/me', requireAuth, validateRequest({ body: updateMeSchema }), updateMeController);
-authRouter.patch('/me/password', requireAuth, validateRequest({ body: updatePasswordSchema }), updatePasswordController);
+authRouter.post('/register', authRateLimit, codeRateLimit, validateRequest({ body: registerSchema }), registerController);
+authRouter.post('/login', authRateLimit, validateRequest({ body: loginSchema }), loginController);
+authRouter.post('/verify-otp', authRateLimit, codeRateLimit, validateRequest({ body: verifyOtpSchema }), verifyOtpController);
+authRouter.post('/resend-otp', authRateLimit, codeRateLimit, validateRequest({ body: resendOtpSchema }), resendOtpController);
+authRouter.get('/me', requireAuth, authenticatedRateLimit, meController);
+authRouter.patch('/me', requireAuth, authenticatedRateLimit, validateRequest({ body: updateMeSchema }), updateMeController);
+authRouter.patch(
+  '/me/password',
+  requireAuth,
+  authenticatedRateLimit,
+  validateRequest({ body: updatePasswordSchema }),
+  updatePasswordController,
+);
 authRouter.post('/logout', logoutController);

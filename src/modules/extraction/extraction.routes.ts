@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { env } from '../../config/env';
 import { requireAuth } from '../../common/middleware/auth.middleware';
+import { authenticatedRateLimit } from '../../common/middleware/rate-limit.middleware';
 import { validateRequest } from '../../common/middleware/validate.middleware';
 import { HttpError } from '../../common/http/http-error';
 import {
@@ -37,7 +38,7 @@ const upload = multer({
 
 export const extractionRouter = Router();
 
-extractionRouter.use(requireAuth);
+extractionRouter.use(requireAuth, authenticatedRateLimit);
 
 extractionRouter.get(
   '/:branchId/menu/extractions/latest',

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { requireAuth } from '../../common/middleware/auth.middleware';
+import { authenticatedRateLimit } from '../../common/middleware/rate-limit.middleware';
 import { validateRequest } from '../../common/middleware/validate.middleware';
 import {
   createAdminFeatureController,
@@ -36,10 +37,10 @@ import {
 export const subscriptionRouter = Router();
 export const adminSubscriptionRouter = Router();
 
-subscriptionRouter.use(requireAuth);
+subscriptionRouter.use(requireAuth, authenticatedRateLimit);
 subscriptionRouter.get('/', getTenantSubscriptionController);
 
-adminSubscriptionRouter.use(requireAuth);
+adminSubscriptionRouter.use(requireAuth, authenticatedRateLimit);
 adminSubscriptionRouter.get('/overview', getAdminSubscriptionOverviewController);
 adminSubscriptionRouter.get(
   '/venues',

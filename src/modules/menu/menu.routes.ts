@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { requireAuth } from '../../common/middleware/auth.middleware';
+import { authenticatedRateLimit } from '../../common/middleware/rate-limit.middleware';
 import { validateRequest } from '../../common/middleware/validate.middleware';
 import {
   branchMenuParamsSchema,
@@ -35,7 +36,7 @@ import {
 
 export const menuRouter = Router();
 
-menuRouter.use(requireAuth);
+menuRouter.use(requireAuth, authenticatedRateLimit);
 
 menuRouter.get('/:branchId/menu', validateRequest({ params: branchMenuParamsSchema }), getBranchMenuController);
 menuRouter.post('/:branchId/menu', validateRequest({ params: branchMenuParamsSchema, body: createMenuSchema }), createBranchMenuController);

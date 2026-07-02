@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { requireAuth } from '../../common/middleware/auth.middleware';
+import { authenticatedRateLimit } from '../../common/middleware/rate-limit.middleware';
 import { paginationMiddleware } from '../../common/middleware/pagination.middleware';
 import { validateRequest } from '../../common/middleware/validate.middleware';
 import {
@@ -17,7 +18,7 @@ import {
 
 export const userRouter = Router();
 
-userRouter.use(requireAuth);
+userRouter.use(requireAuth, authenticatedRateLimit);
 
 userRouter.get('/', paginationMiddleware, validateRequest({ query: userListQuerySchema }), listUsersController);
 userRouter.post('/', validateRequest({ body: createVenueUserSchema }), createUserController);
