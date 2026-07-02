@@ -69,6 +69,7 @@ export async function setupVenue(session: SessionPayload | undefined, input: z.i
         address: input.address,
         googleMapsUrl: input.googleMapsUrl || null,
         instagramUrl: input.instagramUrl || null,
+        facebookUrl: input.facebookUrl || null,
         subscription: {
           create: {
             plan: 'FREE',
@@ -86,6 +87,7 @@ export async function setupVenue(session: SessionPayload | undefined, input: z.i
             address: input.address,
             googleMapsUrl: input.googleMapsUrl || null,
             instagramUrl: input.instagramUrl || null,
+            facebookUrl: input.facebookUrl || null,
           },
         },
       },
@@ -146,6 +148,7 @@ export async function updateMyVenue(session: SessionPayload | undefined, input: 
       coverUrl: input.coverUrl === '' ? null : input.coverUrl,
       googleMapsUrl: input.googleMapsUrl === '' ? null : input.googleMapsUrl,
       instagramUrl: input.instagramUrl === '' ? null : input.instagramUrl,
+      facebookUrl: input.facebookUrl === '' ? null : input.facebookUrl,
     },
     include: {
       subscription: true,

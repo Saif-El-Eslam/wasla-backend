@@ -30,6 +30,7 @@ export const setupVenueSchema = z.object({
   address: localizedTextSchema.optional(),
   googleMapsUrl: optionalUrl,
   instagramUrl: optionalUrl,
+  facebookUrl: optionalUrl,
   branchName: localizedTextSchema,
   branchSlug: z.string().trim().min(3).max(80).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
 });

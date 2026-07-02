@@ -584,8 +584,8 @@ async function brandFooterPng(input: {
             await textComposite({
               text: waslaLabel,
               x: layout.waslaX,
-              y: height - 38,
-              fontSize: textDirection(waslaLabel) === 'rtl' ? 16 : 18,
+              y: height - 18,
+              fontSize: textDirection(waslaLabel) === 'rtl' ? 13 : 14,
               color: qrColors.inkSoft,
               anchor: isRtl ? 'start' : 'end',
             }),
@@ -662,7 +662,7 @@ export async function renderQrPng(input: QrRenderInput) {
     venueName: brand.venueName,
     branchName: brand.branchName,
     logoInitial: brand.venueName.charAt(0).toUpperCase(),
-    waslaLabel: brand.custom ? '' : copy.wasla,
+    waslaLabel: copy.poweredBy,
     showLogo: Boolean(logo),
   });
   const headerComposites = brand.custom
@@ -941,16 +941,14 @@ export async function renderQrSvg(input: QrRenderInput) {
     align: layout.textAlign,
     anchor: layout.textAnchor,
   });
-  const waslaTextSvg = brand.custom
-    ? ''
-    : await svgTextImage({
-        text: copy.wasla,
-        x: layout.waslaX,
-        y: 980,
-        fontSize: useArabicCopy ? 16 : 18,
-        color: qrColors.inkSoft,
-        anchor: isRtlBrand ? 'start' : 'end',
-      });
+  const waslaTextSvg = await svgTextImage({
+    text: copy.poweredBy,
+    x: layout.waslaX,
+    y: 1000,
+    fontSize: useArabicCopy ? 13 : 14,
+    color: qrColors.inkSoft,
+    anchor: isRtlBrand ? 'start' : 'end',
+  });
   const scanTextSvg = await svgTextImage({
     text: copy.scanToOpen,
     x: 480,
@@ -1060,20 +1058,16 @@ export async function renderPosterPng(input: QrRenderInput) {
         anchor: 'middle',
       }),
       { input: await sharp(qrPng).resize(840, 1015).png().toBuffer(), left: 180, top: 430 },
-      ...(brand.custom
-        ? []
-        : [
-            await textComposite({
-              text: copy.poweredBy,
-              x: 600,
-              y: 1480,
-              fontSize: useArabicCopy ? 20 : 22,
-              color: '#115e59',
-              width: useArabicCopy ? 480 : 360,
-              align: 'center',
-              anchor: 'middle',
-            }),
-          ]),
+      await textComposite({
+        text: copy.poweredBy,
+        x: 600,
+        y: 1480,
+        fontSize: useArabicCopy ? 20 : 22,
+        color: '#115e59',
+        width: useArabicCopy ? 480 : 360,
+        align: 'center',
+        anchor: 'middle',
+      }),
     ])
     .png()
     .toBuffer();

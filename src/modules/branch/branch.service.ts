@@ -48,6 +48,7 @@ const branchStatsSelect = Prisma.validator<Prisma.BranchSelect>()({
   coverUrl: true,
   googleMapsUrl: true,
   instagramUrl: true,
+  facebookUrl: true,
   openingHours: true,
   menu: {
     select: {
@@ -97,6 +98,7 @@ function compactBranch(branch: BranchWithStats) {
     coverUrl: branch.coverUrl,
     googleMapsUrl: branch.googleMapsUrl,
     instagramUrl: branch.instagramUrl,
+    facebookUrl: branch.facebookUrl,
     openingHours: branch.openingHours,
     menuId: branch.menu?.id ?? null,
     hasMenu: Boolean(branch.menu),
@@ -293,6 +295,7 @@ export async function createBranch(
         coverUrl: input.coverUrl === '' ? null : input.coverUrl,
         googleMapsUrl: input.googleMapsUrl === '' ? null : input.googleMapsUrl,
         instagramUrl: input.instagramUrl === '' ? null : input.instagramUrl,
+        facebookUrl: input.facebookUrl === '' ? null : input.facebookUrl,
       },
     });
 
@@ -356,6 +359,7 @@ export async function updateBranch(
       coverUrl: input.coverUrl === '' ? null : input.coverUrl,
       googleMapsUrl: input.googleMapsUrl === '' ? null : input.googleMapsUrl,
       instagramUrl: input.instagramUrl === '' ? null : input.instagramUrl,
+      facebookUrl: input.facebookUrl === '' ? null : input.facebookUrl,
     },
   });
 

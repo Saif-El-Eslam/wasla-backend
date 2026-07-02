@@ -13,6 +13,7 @@ const branchPayloadSchema = z.object({
   address: localizedTextSchema.optional(),
   googleMapsUrl: z.string().url().or(z.literal('')).optional(),
   instagramUrl: z.string().url().or(z.literal('')).optional(),
+  facebookUrl: z.string().url().or(z.literal('')).optional(),
   openingHours: z.object({ from: z.string(), to: z.string() }).optional(),
 });
 

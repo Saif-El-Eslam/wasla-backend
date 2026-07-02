@@ -17,6 +17,7 @@ const publicVenueSelect = Prisma.validator<Prisma.VenueSelect>()({
   address: true,
   googleMapsUrl: true,
   instagramUrl: true,
+  facebookUrl: true,
   description: true,
   defaultLocale: true,
   supportedLocales: true,
@@ -43,6 +44,7 @@ const publicVenueSelect = Prisma.validator<Prisma.VenueSelect>()({
       coverUrl: true,
       googleMapsUrl: true,
       instagramUrl: true,
+      facebookUrl: true,
       openingHours: true,
       menu: {
         select: {
@@ -129,6 +131,7 @@ function compactPublicBranch(branch: PublicBranchRecord) {
     coverUrl: branch.coverUrl,
     googleMapsUrl: branch.googleMapsUrl,
     instagramUrl: branch.instagramUrl,
+    facebookUrl: branch.facebookUrl,
     openingHours: branch.openingHours,
     menuId: branch.menu?.id ?? null,
     publishedAt: branch.menu?.publishedAt ?? null,
@@ -152,6 +155,7 @@ function compactPublicVenue(venue: PublicVenueRecord) {
     address: venue.address,
     googleMapsUrl: venue.googleMapsUrl,
     instagramUrl: venue.instagramUrl,
+    facebookUrl: venue.facebookUrl,
     description: venue.description,
     defaultLocale: venue.defaultLocale,
     supportedLocales: venue.supportedLocales,
