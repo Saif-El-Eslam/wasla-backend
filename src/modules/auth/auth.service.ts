@@ -104,6 +104,10 @@ export async function login(input: { phone: string; password: string }) {
     throw new HttpError(401, 'errors.invalidCredentials');
   }
 
+  if (!user.phoneVerifiedAt) {
+    throw new HttpError(403, 'errors.phoneNotVerified');
+  }
+
   const passwordMatches = await bcrypt.compare(input.password, user.passwordHash);
 
   if (!passwordMatches) {
