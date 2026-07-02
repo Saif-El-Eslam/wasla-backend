@@ -13,4 +13,16 @@ export const featureKeys = {
 
 export const unlimitedLimit = 999999;
 
+export const planFeatureValueTypes = ['BOOLEAN', 'NUMBER', 'TEXT', 'JSON'] as const;
+
+export const qrBrandingLevels = {
+  waslaSigned: 'WASLA_SIGNED',
+  venueLogo: 'VENUE_LOGO',
+  fullCustom: 'FULL_CUSTOM',
+} as const;
+
+export const qrBrandingLevelValues = Object.values(qrBrandingLevels);
+
 export type FeatureKey = (typeof featureKeys)[keyof typeof featureKeys];
+export type PlanFeatureValueType = (typeof planFeatureValueTypes)[number];
+export type QrBrandingLevel = (typeof qrBrandingLevels)[keyof typeof qrBrandingLevels];

@@ -19,6 +19,13 @@ enum PaymentProvider {
   PAYMOB
 }
 
+enum PlanFeatureValueType {
+  BOOLEAN
+  NUMBER
+  TEXT
+  JSON
+}
+
 model Subscription {
   id                String              @id @default(uuid())
   venueId           String              @unique
@@ -90,7 +97,7 @@ model Feature {
   key             String                @unique
   name            Json
   description     Json?
-  valueType       String                @default("BOOLEAN")
+  valueType       PlanFeatureValueType  @default(BOOLEAN)
   unit            String?
   displayOrder    Int                   @default(0)
   active          Boolean               @default(true)

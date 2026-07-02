@@ -3,7 +3,7 @@ import { HttpError } from '../../common/http/http-error';
 import type { LocalizedText } from '../../common/i18n/localized-text';
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
 import { deleteImagesByUrl, imageUrlChanged } from '../../storage/image-storage.service';
-import { assertLanguageLimitAllowed, assertVenueCanMutate } from '../subscription/subscription.service';
+import { assertLanguageLimitAllowed, assertVenueCanMutate } from '../subscription/plan-guards';
 import type { z } from 'zod';
 import type { setupVenueSchema, updateVenueSchema } from './venue.schemas';
 

@@ -9,7 +9,7 @@ import {
   assertBranchMutationAllowed,
   assertExtractionAllowed,
   getExtractionAllowance,
-} from '../subscription/subscription.service';
+} from '../subscription/plan-guards';
 import { parseMenuImages } from './gemini-menu-parser.service';
 import type {
   approveExtractionSchema,
@@ -110,7 +110,7 @@ function priceRowsForItem(item: ExtractedItem) {
   });
 }
 
-async function ensureBranchMenu(branchId: string, branchName: Prisma.JsonValue) {
+async function ensureBranchMenu(branchId: string, _branchName: Prisma.JsonValue) {
   const existingMenu = await prisma.menu.findUnique({
     where: { branchId },
     include: menuInclude,

@@ -4,7 +4,8 @@ import { prisma } from '../../database/prisma';
 import { requireBranchAccess } from '../../common/auth/branch-access';
 import { HttpError } from '../../common/http/http-error';
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
-import { assertQrAssetAllowed } from '../subscription/subscription.service';
+import { assertQrAssetAllowed } from '../subscription/plan-guards';
+import { qrBrandingLevels } from '../subscription/subscription.constants';
 import { renderPosterPng, renderQrPng, renderQrSvg } from './qr.renderer';
 import { qrInclude, type QrFormat, type QrMenu, type QrUrlContext } from './qr.types';
 
@@ -66,6 +67,16 @@ function assetUrl(branchId: string, format: QrFormat, context: QrUrlContext = {}
       : `/branches/${branchId}/qr.${format}`;
 
   return absoluteApiUrl(path, context);
+}
+
+function qrBrandingRenderOptions(plan: { qrBranding: string; customQrAssets: boolean }) {
+  const custom = plan.qrBranding === qrBrandingLevels.fullCustom || Boolean(plan.customQrAssets);
+
+  return {
+    custom,
+    noWatermark: custom || plan.qrBranding === qrBrandingLevels.venueLogo,
+    allowVenueLogo: custom || plan.qrBranding === qrBrandingLevels.venueLogo,
+  };
 }
 
 function qrRecordPayload(menu: QrMenu, context: QrUrlContext = {}) {
@@ -165,13 +176,14 @@ export async function getBranchQrAssets(
   context: QrUrlContext = {},
 ) {
   const menu = await getMenuForBranch(session, branchId);
-  await assertQrAssetAllowed(menu.branch.venueId);
+  const plan = await assertQrAssetAllowed(menu.branch.venueId);
   const qrCode = qrRecordPayload(menu, context);
+  const renderOptions = qrBrandingRenderOptions(plan);
   const preview = await renderQrPng({
     menu,
     requestedLocale,
     targetUrl: qrCode.shortUrl,
-    allowVenueLogo: true,
+    ...renderOptions,
   });
 
   return {
@@ -194,6 +206,11 @@ export async function getBranchQrAssets(
       publishedAt: menu.publishedAt,
       qrCode,
       analytics: menu.analytics,
+    },
+    qrBranding: {
+      level: plan.qrBranding,
+      custom: renderOptions.custom,
+      allowVenueLogo: renderOptions.allowVenueLogo,
     },
     publicMenuUrl: publicMenuUrl(menu),
     previewDataUrl: `data:image/png;base64,${preview.toString('base64')}`,
@@ -231,13 +248,13 @@ export async function renderBranchQrAsset(
   context: QrUrlContext = {},
 ) {
   const menu = await getMenuForBranch(session, branchId);
-  await assertQrAssetAllowed(menu.branch.venueId);
+  const plan = await assertQrAssetAllowed(menu.branch.venueId);
   const qrCode = qrRecordPayload(menu, context);
   const renderInput = {
     menu,
     requestedLocale,
     targetUrl: qrCode.shortUrl,
-    allowVenueLogo: true,
+    ...qrBrandingRenderOptions(plan),
   };
 
   if (format === 'svg') {

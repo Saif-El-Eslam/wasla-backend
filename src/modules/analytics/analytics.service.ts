@@ -2,7 +2,7 @@ import { AnalyticsEventType } from '@prisma/client';
 import { prisma } from '../../database/prisma';
 import { branchScopeWhere, requireAccessUser, requireBranchAccess } from '../../common/auth/branch-access';
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
-import { assertAnalyticsAllowed } from '../subscription/subscription.service';
+import { assertAnalyticsAllowed } from '../subscription/plan-guards';
 import type { z } from 'zod';
 import type { analyticsQuerySchema } from './analytics.schemas';
 

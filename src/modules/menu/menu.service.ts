@@ -4,7 +4,7 @@ import { requireBranchAccess } from '../../common/auth/branch-access';
 import { HttpError } from '../../common/http/http-error';
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
 import { deleteImageByUrl, deleteImagesByUrl, imageUrlChanged } from '../../storage/image-storage.service';
-import { assertBranchMutationAllowed } from '../subscription/subscription.service';
+import { assertBranchMutationAllowed } from '../subscription/plan-guards';
 import type { z } from 'zod';
 import type {
   createCategorySchema,

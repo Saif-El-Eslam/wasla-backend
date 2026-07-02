@@ -230,8 +230,6 @@ async function seedPlanCatalog() {
 
   const planRows = await prisma.plan.findMany();
   const featureRows = await prisma.feature.findMany();
-  const planByCode = new Map(planRows.map((plan) => [plan.code, plan]));
-  const featureByKey = new Map(featureRows.map((feature) => [feature.key, feature]));
   const mappingFor = (code: string, key: string) => {
     const values: Record<
       string,
@@ -251,7 +249,7 @@ async function seedPlanCatalog() {
         GEMINI_EXTRACTIONS_MONTHLY: { valueInt: 2 },
         GEMINI_IMAGES_PER_EXTRACTION: { valueInt: 3 },
         ANALYTICS_HISTORY_DAYS: { valueInt: 30 },
-        QR_BRANDING: { valueString: 'VENUE_LOGO' },
+        QR_BRANDING: { valueString: 'WASLA_SIGNED' },
         STAFF_USERS: { valueInt: 5 },
         LANGUAGES: { valueInt: 2 },
       },

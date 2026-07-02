@@ -10,7 +10,7 @@ import {
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
 import { buildPaginationMeta, type PaginationOptions } from '../../common/pagination/pagination';
 import { deleteImagesByUrl, imageUrlChanged } from '../../storage/image-storage.service';
-import { assertBranchCreateAllowed, assertBranchMutationAllowed, assertVenueCanMutate } from '../subscription/subscription.service';
+import { assertBranchCreateAllowed, assertBranchMutationAllowed, assertVenueCanMutate } from '../subscription/plan-guards';
 import type { z } from 'zod';
 import type { createBranchSchema, updateBranchSchema } from './branch.schemas';
 
@@ -369,7 +369,7 @@ export async function updateBranch(
 
 export async function setMainBranch(session: SessionPayload | undefined, branchId: string) {
   const { venueId } = await requireVenueAdmin(session);
-  await assertVenueCanMutate(venueId);
+  await assertBranchMutationAllowed(venueId, branchId);
   const branch = await prisma.branch.findFirst({
     where: { id: branchId, venueId },
   });

@@ -1,5 +1,6 @@
 import { MenuPlan, SubscriptionStatus } from '@prisma/client';
 import { z } from 'zod';
+import { planFeatureValueTypes } from './subscription.constants';
 
 const localizedTextSchema = z.object({
   en: z.string().min(1).max(120),
@@ -66,7 +67,7 @@ export const upsertFeatureSchema = z.object({
     .regex(/^[A-Z0-9_]+$/),
   name: localizedTextSchema,
   description: localizedDescriptionSchema,
-  valueType: z.enum(['BOOLEAN', 'NUMBER', 'TEXT', 'JSON']).default('BOOLEAN'),
+  valueType: z.enum(planFeatureValueTypes).default('BOOLEAN'),
   unit: z.string().max(60).nullable().optional(),
   displayOrder: z.number().int().min(0).default(0),
   active: z.boolean().default(true),

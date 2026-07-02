@@ -32,6 +32,7 @@
     "subscriptionInactive": "اشتراكك غير نشط.",
     "subscriptionPastDue": "Your subscription is past due. Public menus stay online, but workspace changes are paused.",
     "planCatalogMissing": "Plan catalog is not configured.",
+    "invalidPlanFeatureValue": "Invalid value for this plan feature.",
     "planBranchLimit": "This plan has reached its branch limit.",
     "planOverLimitBranch": "This branch is over the current plan limit. Existing data is readable, but changes are paused.",
     "planStaffLimit": "This plan has reached its staff user limit.",

@@ -18,6 +18,8 @@ type QrRenderInput = {
   targetUrl: string;
   requestedLocale?: string;
   allowVenueLogo?: boolean;
+  custom?: boolean;
+  noWatermark?: boolean;
 };
 
 const qrColors = {
@@ -277,7 +279,12 @@ function localizedJson(value: Prisma.JsonValue | null | undefined) {
     : undefined;
 }
 
-function brandForMenu(menu: QrMenu, requestedLocale?: string, allowVenueLogo = true) {
+function brandForMenu(
+  menu: QrMenu,
+  requestedLocale?: string,
+  allowVenueLogo = true,
+  custom = false,
+) {
   const venueName = resolveLocalizedText(localizedJson(menu.branch.venue.name), {
     requestedLocale,
     defaultLocale: menu.branch.venue.defaultLocale,
@@ -294,6 +301,7 @@ function brandForMenu(menu: QrMenu, requestedLocale?: string, allowVenueLogo = t
     logoUrls: allowVenueLogo
       ? [menu.branch.logoUrl, menu.branch.venue.logoUrl].filter(Boolean)
       : [],
+    custom,
   };
 }
 
@@ -336,7 +344,7 @@ function shouldUseArabicQrCopy(
 }
 
 function qrRenderData(input: QrRenderInput) {
-  const brand = brandForMenu(input.menu, input.requestedLocale, input.allowVenueLogo);
+  const brand = brandForMenu(input.menu, input.requestedLocale, input.allowVenueLogo, input.custom);
   const useArabicCopy = shouldUseArabicQrCopy(input.requestedLocale, brand);
 
   return {
@@ -347,7 +355,7 @@ function qrRenderData(input: QrRenderInput) {
   };
 }
 
-async function fallbackCenterMarkPng(size: number) {
+async function fallbackCenterMarkPng(size: number, mark = 'W') {
   const radius = Math.round(size * 0.22);
   const fontSize = Math.round(size * 0.46);
   const base = Buffer.from(`
@@ -360,7 +368,7 @@ async function fallbackCenterMarkPng(size: number) {
   return sharp(base)
     .composite([
       await textComposite({
-        text: 'W',
+        text: mark,
         x: size / 2,
         y: size / 2 + 4,
         fontSize,
@@ -383,19 +391,56 @@ async function loadRemoteAssetBuffer(url: string) {
 }
 
 async function centerMarkPng(size: number) {
+  return waslaCenterMarkPng(size);
+}
+
+async function customCenterMarkPng(size: number, brand: QrBrand) {
+  const logo = await firstLogoBuffer({
+    logoUrls: brand.logoUrls,
+    logoUrl: brand.venueLogoUrl,
+  });
+
+  if (!logo) {
+    return fallbackCenterMarkPng(size, brand.venueName.charAt(0).toUpperCase() || 'V');
+  }
+
+  const background = Buffer.from(`
+    <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0" y="0" width="${size}" height="${size}" rx="${Math.round(size * 0.22)}" fill="#ffffff"/>
+    </svg>
+  `);
+  const logoBody = await sharp(logo)
+    .resize(Math.round(size * 0.72), Math.round(size * 0.72), {
+      fit: 'contain',
+      background: '#00000000',
+    })
+    .png()
+    .toBuffer();
+
+  return sharp(background)
+    .composite([
+      {
+        input: logoBody,
+        left: Math.round(size * 0.14),
+        top: Math.round(size * 0.14),
+      },
+    ])
+    .png()
+    .toBuffer();
+}
+
+async function waslaCenterMarkPng(size: number) {
   for (const logoFile of waslaLogoSvgFiles) {
     try {
       const logoBuffer = logoFile.startsWith('http')
         ? await loadRemoteAssetBuffer(logoFile)
         : readFileSync(logoFile);
-      console.log('logoFile');
 
       return await sharp(logoBuffer)
         .resize(size, size, { fit: 'contain', background: '#00000000' })
         .png()
         .toBuffer();
-    } catch (error) {
-      console.error('Failed logoFile', logoFile, error);
+    } catch {
       continue;
     }
   }
@@ -482,24 +527,40 @@ async function brandFooterPng(input: {
   branchName: string;
   logoInitial: string;
   waslaLabel: string;
+  showLogo?: boolean;
 }) {
   const { width, height, venueName, branchName, logoInitial, waslaLabel } = input;
+  const showLogo = input.showLogo ?? true;
   const isRtl = textDirection(venueName) === 'rtl' || textDirection(branchName) === 'rtl';
   const layout = footerLayout({ width, isRtl });
+  const textX = showLogo ? layout.textX : layout.logoX;
 
-  return sharp(brandFooterBaseSvg({ width, height, logoSide: layout.logoSide }))
+  return sharp(
+    showLogo
+      ? brandFooterBaseSvg({ width, height, logoSide: layout.logoSide })
+      : Buffer.from(`
+          <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
+            <rect width="${width}" height="${height}" rx="32" fill="#ffffff"/>
+            <rect x="1" y="1" width="${width - 2}" height="${height - 2}" rx="31" fill="none" stroke="#d6f3ef" stroke-width="2"/>
+          </svg>
+        `),
+  )
     .composite([
-      await textComposite({
-        text: logoInitial || 'V',
-        x: layout.logoX,
-        y: height / 2 + 2,
-        fontSize: 34,
-        color: qrColors.ink,
-        anchor: 'middle',
-      }),
+      ...(showLogo
+        ? [
+            await textComposite({
+              text: logoInitial || 'V',
+              x: layout.logoX,
+              y: height / 2 + 2,
+              fontSize: 34,
+              color: qrColors.ink,
+              anchor: 'middle',
+            }),
+          ]
+        : []),
       await textComposite({
         text: labelText(venueName, 'Venue', 34),
-        x: layout.textX,
+        x: textX,
         y: 46,
         fontSize: isRtl ? 20 : 30,
         color: qrColors.stone,
@@ -509,7 +570,7 @@ async function brandFooterPng(input: {
       }),
       await textComposite({
         text: labelText(branchName, 'Branch', 40),
-        x: layout.textX,
+        x: textX,
         y: 90,
         fontSize: isRtl ? 17 : 20,
         color: qrColors.muted,
@@ -518,14 +579,18 @@ async function brandFooterPng(input: {
         align: layout.textAlign,
         anchor: layout.textAnchor,
       }),
-      await textComposite({
-        text: waslaLabel,
-        x: layout.waslaX,
-        y: height - 38,
-        fontSize: textDirection(waslaLabel) === 'rtl' ? 16 : 18,
-        color: qrColors.inkSoft,
-        anchor: isRtl ? 'start' : 'end',
-      }),
+      ...(waslaLabel
+        ? [
+            await textComposite({
+              text: waslaLabel,
+              x: layout.waslaX,
+              y: height - 38,
+              fontSize: textDirection(waslaLabel) === 'rtl' ? 16 : 18,
+              color: qrColors.inkSoft,
+              anchor: isRtl ? 'start' : 'end',
+            }),
+          ]
+        : []),
     ])
     .png()
     .toBuffer();
@@ -575,21 +640,15 @@ export async function renderQrPng(input: QrRenderInput) {
       <rect x="346" y="74" width="268" height="30" rx="15" fill="#ffffff"/>
     </svg>
   `);
-  const watermark = await rasterText({
-    text: copy.wasla,
-    fontSize: useArabicCopy ? 88 : 102,
-    color: '#d6f3ef',
-    weight: 'bold',
-    opacity: 0.42,
-  });
-  const footer = await brandFooterPng({
-    width: qrFooterFrame.width,
-    height: qrFooterFrame.height,
-    venueName: brand.venueName,
-    branchName: brand.branchName,
-    logoInitial: brand.venueName.charAt(0).toUpperCase(),
-    waslaLabel: copy.wasla,
-  });
+  const watermark = input.noWatermark
+    ? null
+    : await rasterText({
+        text: copy.wasla,
+        fontSize: useArabicCopy ? 88 : 102,
+        color: '#d6f3ef',
+        weight: 'bold',
+        opacity: 0.42,
+      });
   const logo = await logoComposite({
     logoUrls: brand.logoUrls,
     logoUrl: brand.venueLogoUrl,
@@ -597,26 +656,67 @@ export async function renderQrPng(input: QrRenderInput) {
     top: qrFooterFrame.top + 28,
     size: 76,
   });
+  const footer = await brandFooterPng({
+    width: qrFooterFrame.width,
+    height: qrFooterFrame.height,
+    venueName: brand.venueName,
+    branchName: brand.branchName,
+    logoInitial: brand.venueName.charAt(0).toUpperCase(),
+    waslaLabel: brand.custom ? '' : copy.wasla,
+    showLogo: Boolean(logo),
+  });
+  const headerComposites = brand.custom
+    ? [
+        await textComposite({
+          text: brand.venueName,
+          x: 480,
+          y: 74,
+          fontSize: useArabicCopy ? 18 : 20,
+          color: qrColors.stone,
+          width: 520,
+          align: 'center',
+          anchor: 'middle',
+        }),
+        await textComposite({
+          text: brand.branchName,
+          x: 480,
+          y: 99,
+          fontSize: useArabicCopy ? 13 : 14,
+          color: qrColors.inkSoft,
+          width: 480,
+          align: 'center',
+          anchor: 'middle',
+        }),
+      ]
+    : [
+        await textComposite({
+          text: copy.menuQr,
+          x: 480,
+          y: 92,
+          fontSize: useArabicCopy ? 16 : 18,
+          color: qrColors.inkSoft,
+          width: useArabicCopy ? 330 : 268,
+          align: 'center',
+          anchor: 'middle',
+        }),
+      ];
   const composites: sharp.OverlayOptions[] = [
     { input: baseSvg, left: 0, top: 0 },
-    {
-      input: await sharp(watermark).rotate(-24, { background: '#00000000' }).png().toBuffer(),
-      left: 326,
-      top: 152,
-    },
-    await textComposite({
-      text: copy.menuQr,
-      x: 480,
-      y: 92,
-      fontSize: useArabicCopy ? 16 : 18,
-      color: qrColors.inkSoft,
-      width: useArabicCopy ? 330 : 268,
-      align: 'center',
-      anchor: 'middle',
-    }),
+    ...(watermark
+      ? [
+          {
+            input: await sharp(watermark).rotate(-24, { background: '#00000000' }).png().toBuffer(),
+            left: 326,
+            top: 152,
+          },
+        ]
+      : []),
+    ...headerComposites,
     { input: codeBuffer, left: qrCodeFrame.left, top: qrCodeFrame.top },
     {
-      input: await centerMarkPng(qrCenterMarkSize),
+      input: brand.custom
+        ? await customCenterMarkPng(qrCenterMarkSize, brand)
+        : await centerMarkPng(qrCenterMarkSize),
       left: qrCodeFrame.left + qrCodeFrame.size / 2 - qrCenterMarkSize / 2,
       top: qrCodeFrame.top + qrCodeFrame.size / 2 - qrCenterMarkSize / 2,
     },
@@ -681,12 +781,7 @@ async function logoSvg(input: {
   const logo = await firstLogoBuffer(input);
 
   if (!logo) {
-    return `
-      <circle cx="${input.x}" cy="${input.y}" r="${input.size / 2}" fill="#ccfbf1"/>
-      <text x="${input.x}" y="${input.y + 2}" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="900" fill="${qrColors.ink}">
-        ${escapeXml(input.fallbackInitial)}
-      </text>
-    `;
+    return null;
   }
 
   return `
@@ -747,8 +842,10 @@ async function svgTextImage(input: {
     : image;
 }
 
-async function centerMarkSvg(input: { x: number; y: number; size: number }) {
-  const markPng = await centerMarkPng(input.size);
+async function centerMarkSvg(input: { x: number; y: number; size: number; brand: QrBrand }) {
+  const markPng = input.brand.custom
+    ? await customCenterMarkPng(input.size, input.brand)
+    : await centerMarkPng(input.size);
 
   return `
     <image
@@ -778,30 +875,54 @@ export async function renderQrSvg(input: QrRenderInput) {
     size: 76,
     fallbackInitial: brand.venueName.charAt(0).toUpperCase(),
   });
-  const watermarkSvg = await svgTextImage({
-    text: copy.wasla,
-    x: 480,
-    y: 210,
-    fontSize: useArabicCopy ? 88 : 102,
-    color: '#d6f3ef',
-    weight: 'bold',
-    opacity: 0.42,
-    anchor: 'middle',
-    rotate: -24,
-  });
-  const headerTextSvg = await svgTextImage({
-    text: copy.menuQr,
-    x: 480,
-    y: 92,
-    fontSize: useArabicCopy ? 16 : 18,
-    color: qrColors.inkSoft,
-    width: useArabicCopy ? 330 : 268,
-    align: 'center',
-    anchor: 'middle',
-  });
+
+  const watermarkSvg = input.noWatermark
+    ? null
+    : await svgTextImage({
+        text: copy.wasla,
+        x: 480,
+        y: 210,
+        fontSize: useArabicCopy ? 88 : 102,
+        color: '#d6f3ef',
+        weight: 'bold',
+        opacity: 0.42,
+        anchor: 'middle',
+        rotate: -24,
+      });
+  const headerTextSvg = brand.custom
+    ? `${await svgTextImage({
+        text: brand.venueName,
+        x: 480,
+        y: 74,
+        fontSize: useArabicCopy ? 18 : 20,
+        color: qrColors.stone,
+        width: 520,
+        align: 'center',
+        anchor: 'middle',
+      })}
+      ${await svgTextImage({
+        text: brand.branchName,
+        x: 480,
+        y: 99,
+        fontSize: useArabicCopy ? 13 : 14,
+        color: qrColors.inkSoft,
+        width: 480,
+        align: 'center',
+        anchor: 'middle',
+      })}`
+    : await svgTextImage({
+        text: copy.menuQr,
+        x: 480,
+        y: 92,
+        fontSize: useArabicCopy ? 16 : 18,
+        color: qrColors.inkSoft,
+        width: useArabicCopy ? 330 : 268,
+        align: 'center',
+        anchor: 'middle',
+      });
   const venueTextSvg = await svgTextImage({
     text: labelText(brand.venueName, 'Venue', 34),
-    x: layout.textX,
+    x: footerLogoSvg ? layout.textX : layout.logoX,
     y: 932,
     fontSize: isRtlBrand ? 20 : 30,
     color: qrColors.stone,
@@ -811,7 +932,7 @@ export async function renderQrSvg(input: QrRenderInput) {
   });
   const branchTextSvg = await svgTextImage({
     text: labelText(brand.branchName, 'Branch', 40),
-    x: layout.textX,
+    x: footerLogoSvg ? layout.textX : layout.logoX,
     y: 976,
     fontSize: isRtlBrand ? 17 : 20,
     color: qrColors.muted,
@@ -820,14 +941,16 @@ export async function renderQrSvg(input: QrRenderInput) {
     align: layout.textAlign,
     anchor: layout.textAnchor,
   });
-  const waslaTextSvg = await svgTextImage({
-    text: copy.wasla,
-    x: layout.waslaX,
-    y: 980,
-    fontSize: useArabicCopy ? 16 : 18,
-    color: qrColors.inkSoft,
-    anchor: isRtlBrand ? 'start' : 'end',
-  });
+  const waslaTextSvg = brand.custom
+    ? ''
+    : await svgTextImage({
+        text: copy.wasla,
+        x: layout.waslaX,
+        y: 980,
+        fontSize: useArabicCopy ? 16 : 18,
+        color: qrColors.inkSoft,
+        anchor: isRtlBrand ? 'start' : 'end',
+      });
   const scanTextSvg = await svgTextImage({
     text: copy.scanToOpen,
     x: 480,
@@ -842,6 +965,7 @@ export async function renderQrSvg(input: QrRenderInput) {
     x: 480,
     y: 464,
     size: qrCenterMarkSize,
+    brand,
   });
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -873,13 +997,15 @@ export async function renderPosterPng(input: QrRenderInput) {
       <rect x="116" y="358" width="968" height="1170" rx="56" fill="#ffffff"/>
     </svg>
   `);
-  const posterWatermark = await rasterText({
-    text: copy.wasla,
-    fontSize: useArabicCopy ? 130 : 150,
-    color: '#115e59',
-    weight: 'bold',
-    opacity: 0.36,
-  });
+  const posterWatermark = input.noWatermark
+    ? null
+    : await rasterText({
+        text: copy.wasla,
+        fontSize: useArabicCopy ? 130 : 150,
+        color: '#115e59',
+        weight: 'bold',
+        opacity: 0.36,
+      });
 
   return sharp({
     create: {
@@ -891,14 +1017,18 @@ export async function renderPosterPng(input: QrRenderInput) {
   })
     .composite([
       { input: header, left: 0, top: 0 },
-      {
-        input: await sharp(posterWatermark)
-          .rotate(-18, { background: '#00000000' })
-          .png()
-          .toBuffer(),
-        left: 380,
-        top: 202,
-      },
+      ...(posterWatermark
+        ? [
+            {
+              input: await sharp(posterWatermark)
+                .rotate(-18, { background: '#00000000' })
+                .png()
+                .toBuffer(),
+              left: 380,
+              top: 202,
+            },
+          ]
+        : []),
       await textComposite({
         text: copy.posterScan,
         x: 600,
@@ -930,16 +1060,20 @@ export async function renderPosterPng(input: QrRenderInput) {
         anchor: 'middle',
       }),
       { input: await sharp(qrPng).resize(840, 1015).png().toBuffer(), left: 180, top: 430 },
-      await textComposite({
-        text: copy.poweredBy,
-        x: 600,
-        y: 1480,
-        fontSize: useArabicCopy ? 20 : 22,
-        color: '#115e59',
-        width: useArabicCopy ? 480 : 360,
-        align: 'center',
-        anchor: 'middle',
-      }),
+      ...(brand.custom
+        ? []
+        : [
+            await textComposite({
+              text: copy.poweredBy,
+              x: 600,
+              y: 1480,
+              fontSize: useArabicCopy ? 20 : 22,
+              color: '#115e59',
+              width: useArabicCopy ? 480 : 360,
+              align: 'center',
+              anchor: 'middle',
+            }),
+          ]),
     ])
     .png()
     .toBuffer();

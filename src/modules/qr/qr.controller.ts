@@ -32,27 +32,45 @@ export const regenerateBranchQrController = asyncHandler(async (req, res) => {
 });
 
 export const downloadBranchQrPngController = asyncHandler(async (req, res) => {
-  const asset = await renderBranchQrAsset(req.user, String(req.params.branchId), 'png', req.locale, {
-    apiOrigin: requestApiOrigin(req),
-  });
+  const asset = await renderBranchQrAsset(
+    req.user,
+    String(req.params.branchId),
+    'png',
+    req.locale,
+    {
+      apiOrigin: requestApiOrigin(req),
+    },
+  );
   res.setHeader('Content-Type', asset.contentType);
   res.setHeader('Content-Disposition', `attachment; filename="${asset.filename}"`);
   res.send(asset.body);
 });
 
 export const downloadBranchQrSvgController = asyncHandler(async (req, res) => {
-  const asset = await renderBranchQrAsset(req.user, String(req.params.branchId), 'svg', req.locale, {
-    apiOrigin: requestApiOrigin(req),
-  });
+  const asset = await renderBranchQrAsset(
+    req.user,
+    String(req.params.branchId),
+    'svg',
+    req.locale,
+    {
+      apiOrigin: requestApiOrigin(req),
+    },
+  );
   res.setHeader('Content-Type', asset.contentType);
   res.setHeader('Content-Disposition', `attachment; filename="${asset.filename}"`);
   res.send(asset.body);
 });
 
 export const downloadBranchQrPosterController = asyncHandler(async (req, res) => {
-  const asset = await renderBranchQrAsset(req.user, String(req.params.branchId), 'poster', req.locale, {
-    apiOrigin: requestApiOrigin(req),
-  });
+  const asset = await renderBranchQrAsset(
+    req.user,
+    String(req.params.branchId),
+    'poster',
+    req.locale,
+    {
+      apiOrigin: requestApiOrigin(req),
+    },
+  );
   res.setHeader('Content-Type', asset.contentType);
   res.setHeader('Content-Disposition', `attachment; filename="${asset.filename}"`);
   res.send(asset.body);

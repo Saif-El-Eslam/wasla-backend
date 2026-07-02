@@ -10,8 +10,15 @@ import { prisma } from '../../database/prisma';
 import { requireAccessUser } from '../../common/auth/branch-access';
 import { HttpError } from '../../common/http/http-error';
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
-import { env } from '../../config/env';
-import { featureKeys, unlimitedLimit, type FeatureKey } from './subscription.constants';
+import {
+  featureKeys,
+  planFeatureValueTypes,
+  qrBrandingLevelValues,
+  qrBrandingLevels,
+  unlimitedLimit,
+  type FeatureKey,
+  type QrBrandingLevel,
+} from './subscription.constants';
 import type {
   updateFeatureSchema,
   updatePlanFeatureMappingSchema,
@@ -22,8 +29,6 @@ import type {
   upsertPlanSchema,
 } from './subscription.schemas';
 import type { z } from 'zod';
-
-const mutablePlanStatuses: SubscriptionStatus[] = ['TRIALING', 'ACTIVE'];
 
 function monthStart() {
   const now = new Date();
@@ -175,6 +180,19 @@ async function normalizeSubscription(venueId: string) {
 
   if (subscription.status === 'CANCELED' || subscription.status === 'EXPIRED' || periodExpired) {
     return prisma.$transaction(async (tx) => {
+      if (
+        periodExpired &&
+        subscription.status !== SubscriptionStatus.EXPIRED &&
+        subscription.status !== SubscriptionStatus.CANCELED
+      ) {
+        const expired = await tx.subscription.update({
+          where: { venueId },
+          data: { status: SubscriptionStatus.EXPIRED },
+        });
+
+        await recordSubscriptionHistory(tx, expired, 'SYSTEM_EXPIRE');
+      }
+
       const updated = await tx.subscription.update({
         where: { venueId },
         data: {
@@ -257,6 +275,14 @@ function textFeature(
   return value?.enabled === false ? fallback : (value?.valueString ?? fallback);
 }
 
+function qrBrandingFeature(features: Awaited<ReturnType<typeof getPlanFeatureValues>>) {
+  const value = textFeature(features, featureKeys.qrBranding, qrBrandingLevels.waslaSigned);
+
+  return qrBrandingLevelValues.includes(value as QrBrandingLevel)
+    ? (value as QrBrandingLevel)
+    : qrBrandingLevels.waslaSigned;
+}
+
 export async function getVenuePlanContext(venueId: string) {
   const subscription = await normalizeSubscription(venueId);
   const features = await getPlanFeatureValues(subscription.plan);
@@ -272,177 +298,11 @@ export async function getVenuePlanContext(venueId: string) {
     extractionMaxImages: numberFeature(features, featureKeys.geminiImagesPerExtraction, 0),
     analyticsHistoryDays: numberFeature(features, featureKeys.analyticsHistoryDays, 7),
     advancedAnalytics: booleanFeature(features, featureKeys.advancedAnalytics),
-    qrBranding: textFeature(features, featureKeys.qrBranding, 'WASLA_SIGNED'),
+    qrBranding: qrBrandingFeature(features),
     customQrAssets: booleanFeature(features, featureKeys.customQrAssets),
     staffUserLimit: numberFeature(features, featureKeys.staffUsers, 2),
     languageLimit: numberFeature(features, featureKeys.languages, 1),
   };
-}
-
-function subscriptionAllowsMutations(status: SubscriptionStatus) {
-  return mutablePlanStatuses.includes(status);
-}
-
-export async function assertVenueCanMutate(venueId: string) {
-  const context = await getVenuePlanContext(venueId);
-
-  if (context.status === 'PAST_DUE') {
-    throw new HttpError(403, 'errors.subscriptionPastDue');
-  }
-
-  if (!subscriptionAllowsMutations(context.status)) {
-    throw new HttpError(403, 'errors.subscriptionInactive');
-  }
-
-  return context;
-}
-
-export async function assertBranchCreateAllowed(venueId: string) {
-  const context = await assertVenueCanMutate(venueId);
-  const branchCount = await prisma.branch.count({ where: { venueId } });
-
-  if (!isUnlimited(context.branchLimit) && branchCount >= context.branchLimit) {
-    throw new HttpError(403, 'errors.planBranchLimit', {
-      feature: featureKeys.branchLimit,
-      limit: context.branchLimit,
-      used: branchCount,
-    });
-  }
-}
-
-export async function assertBranchMutationAllowed(venueId: string, branchId: string) {
-  const context = await assertVenueCanMutate(venueId);
-
-  if (isUnlimited(context.branchLimit)) {
-    return;
-  }
-
-  const branches = await prisma.branch.findMany({
-    where: { venueId },
-    orderBy: [{ isMain: 'desc' }, { createdAt: 'asc' }],
-    select: { id: true },
-  });
-  const allowedIds = new Set(branches.slice(0, context.branchLimit).map((branch) => branch.id));
-
-  if (!allowedIds.has(branchId)) {
-    throw new HttpError(403, 'errors.planOverLimitBranch', {
-      feature: featureKeys.branchLimit,
-      limit: context.branchLimit,
-    });
-  }
-}
-
-export async function getExtractionAllowance(venueId: string) {
-  const context = await getVenuePlanContext(venueId);
-  const usedThisMonth = await prisma.extractionJob.count({
-    where: {
-      venueId,
-      createdAt: { gte: monthStart() },
-      status: {
-        in: [
-          ExtractionJobStatus.COMPLETED,
-          ExtractionJobStatus.APPROVED,
-          ExtractionJobStatus.PROCESSING,
-          ExtractionJobStatus.PENDING,
-          ExtractionJobStatus.REJECTED,
-        ],
-      },
-    },
-  });
-  const canExtract =
-    subscriptionAllowsMutations(context.status) &&
-    context.extractionMonthlyLimit > 0 &&
-    (isUnlimited(context.extractionMonthlyLimit) || usedThisMonth < context.extractionMonthlyLimit);
-
-  return {
-    plan: context.plan,
-    subscriptionStatus: context.status,
-    canExtract,
-    monthlyExtractions: plainLimit(context.extractionMonthlyLimit),
-    unlimitedExtractions: isUnlimited(context.extractionMonthlyLimit),
-    usedThisMonth,
-    remainingThisMonth: isUnlimited(context.extractionMonthlyLimit)
-      ? null
-      : Math.max(context.extractionMonthlyLimit - usedThisMonth, 0),
-    maxImages: Math.min(context.extractionMaxImages, env.GEMINI_MAX_IMAGES_PER_EXTRACTION),
-  };
-}
-
-export async function assertExtractionAllowed(venueId: string, imageCount: number) {
-  const allowance = await getExtractionAllowance(venueId);
-
-  if (allowance.subscriptionStatus === 'PAST_DUE') {
-    throw new HttpError(403, 'errors.subscriptionPastDue');
-  }
-
-  if (!allowance.canExtract) {
-    throw new HttpError(403, 'errors.extractionPlanLimit');
-  }
-
-  if (imageCount > allowance.maxImages) {
-    throw new HttpError(400, 'errors.extractionImageLimit');
-  }
-
-  return allowance;
-}
-
-export async function assertStaffUserCreateAllowed(venueId: string) {
-  const context = await assertVenueCanMutate(venueId);
-  const userCount = await prisma.user.count({ where: { venueId } });
-
-  if (!isUnlimited(context.staffUserLimit) && userCount >= context.staffUserLimit) {
-    throw new HttpError(403, 'errors.planStaffLimit', {
-      feature: featureKeys.staffUsers,
-      limit: context.staffUserLimit,
-      used: userCount,
-    });
-  }
-}
-
-export async function assertLanguageLimitAllowed(
-  venueId: string,
-  supportedLocales: string[] | undefined,
-) {
-  if (!supportedLocales) {
-    return;
-  }
-
-  const context = await assertVenueCanMutate(venueId);
-
-  if (!isUnlimited(context.languageLimit) && supportedLocales.length > context.languageLimit) {
-    throw new HttpError(403, 'errors.planLanguageLimit', {
-      feature: featureKeys.languages,
-      limit: context.languageLimit,
-      used: supportedLocales.length,
-    });
-  }
-}
-
-export async function assertAnalyticsAllowed(venueId: string, days: number, advanced: boolean) {
-  const context = await getVenuePlanContext(venueId);
-
-  if (advanced && !context.advancedAnalytics) {
-    throw new HttpError(403, 'errors.advancedAnalyticsRequired');
-  }
-
-  if (!isUnlimited(context.analyticsHistoryDays) && days > context.analyticsHistoryDays) {
-    throw new HttpError(403, 'errors.analyticsHistoryLimit', {
-      feature: featureKeys.analyticsHistoryDays,
-      limit: context.analyticsHistoryDays,
-    });
-  }
-
-  return context;
-}
-
-export async function assertQrAssetAllowed(venueId: string, customAsset = false) {
-  const context = await assertVenueCanMutate(venueId);
-
-  if (customAsset && !context.customQrAssets) {
-    throw new HttpError(403, 'errors.customQrRequired');
-  }
-
-  return context;
 }
 
 function manualUpgradeUrl(input: { venueName: string; targetPlan: MenuPlan }) {
@@ -768,15 +628,113 @@ export async function deleteAdminFeature(session: SessionPayload | undefined, fe
   return { deleted: true };
 }
 
+type MappingValueInput = Partial<z.infer<typeof upsertPlanFeatureMappingSchema>>;
+type MappingFeature = {
+  key: string;
+  valueType: string;
+};
+
+type PlanFeatureValueType = (typeof planFeatureValueTypes)[number];
+
+function planFeatureValueType(value: string): PlanFeatureValueType {
+  if (planFeatureValueTypes.includes(value as PlanFeatureValueType)) {
+    return value as PlanFeatureValueType;
+  }
+
+  throw new HttpError(400, 'errors.invalidPlanFeatureValue', {
+    feature: 'valueType',
+    allowed: planFeatureValueTypes.join(', '),
+  });
+}
+
+function normalizeMappingValue(feature: MappingFeature, input: MappingValueInput) {
+  const output: MappingValueInput = { ...input };
+  const valueType = planFeatureValueType(feature.valueType);
+  const hasValueInt = Object.prototype.hasOwnProperty.call(input, 'valueInt');
+  const hasValueBool = Object.prototype.hasOwnProperty.call(input, 'valueBool');
+  const hasValueString = Object.prototype.hasOwnProperty.call(input, 'valueString');
+  const hasValueJson = Object.prototype.hasOwnProperty.call(input, 'valueJson');
+
+  if (valueType === 'BOOLEAN' && hasValueBool) {
+    output.valueInt = null;
+    output.valueString = null;
+    output.valueJson = undefined;
+    return output;
+  }
+
+  if (valueType === 'NUMBER' && hasValueInt) {
+    output.valueBool = null;
+    output.valueString = null;
+    output.valueJson = undefined;
+    return output;
+  }
+
+  if (valueType === 'TEXT' && hasValueString) {
+    if (
+      feature.key === featureKeys.qrBranding &&
+      input.valueString !== null &&
+      !qrBrandingLevelValues.includes(input.valueString as QrBrandingLevel)
+    ) {
+      throw new HttpError(400, 'errors.invalidPlanFeatureValue', {
+        feature: feature.key,
+        allowed: qrBrandingLevelValues.join(', '),
+      });
+    }
+
+    output.valueInt = null;
+    output.valueBool = null;
+    output.valueJson = undefined;
+    return output;
+  }
+
+  if (valueType === 'JSON' && hasValueJson) {
+    output.valueInt = null;
+    output.valueBool = null;
+    output.valueString = null;
+    return output;
+  }
+
+  if (hasValueInt || hasValueBool || hasValueString || hasValueJson) {
+    throw new HttpError(400, 'errors.invalidPlanFeatureValue', {
+      feature: feature.key,
+      allowed: valueType,
+    });
+  }
+
+  return output;
+}
+
+function mappingUpdateData(input: MappingValueInput): Prisma.PlanFeatureMappingUncheckedUpdateInput {
+  return {
+    enabled: input.enabled,
+    valueInt: input.valueInt,
+    valueBool: input.valueBool,
+    valueString: input.valueString,
+    valueJson:
+      input.valueJson === undefined ? undefined : (input.valueJson as Prisma.InputJsonValue),
+  };
+}
+
 export async function createAdminMapping(
   session: SessionPayload | undefined,
   input: z.infer<typeof upsertPlanFeatureMappingSchema>,
 ) {
   await requireSuperAdmin(session);
-  const data = {
-    ...input,
+  const feature = await prisma.feature.findUniqueOrThrow({
+    where: { id: input.featureId },
+    select: { key: true, valueType: true },
+  });
+  const normalized = normalizeMappingValue(feature, input);
+  const data = mappingUpdateData(normalized);
+  const createData: Prisma.PlanFeatureMappingUncheckedCreateInput = {
+    planId: input.planId,
+    featureId: input.featureId,
+    enabled: normalized.enabled ?? true,
+    valueInt: normalized.valueInt,
+    valueBool: normalized.valueBool,
+    valueString: normalized.valueString,
     valueJson:
-      input.valueJson === undefined ? undefined : (input.valueJson as Prisma.InputJsonValue),
+      normalized.valueJson === undefined ? undefined : (normalized.valueJson as Prisma.InputJsonValue),
   };
 
   return prisma.planFeatureMapping.upsert({
@@ -787,7 +745,7 @@ export async function createAdminMapping(
       },
     },
     update: data,
-    create: data,
+    create: createData,
     include: { plan: true, feature: true },
   });
 }
@@ -798,11 +756,12 @@ export async function updateAdminMapping(
   input: z.infer<typeof updatePlanFeatureMappingSchema>,
 ) {
   await requireSuperAdmin(session);
-  const data = {
-    ...input,
-    valueJson:
-      input.valueJson === undefined ? undefined : (input.valueJson as Prisma.InputJsonValue),
-  };
+  const existing = await prisma.planFeatureMapping.findUniqueOrThrow({
+    where: { id: mappingId },
+    include: { feature: { select: { key: true, valueType: true } } },
+  });
+  const normalized = normalizeMappingValue(existing.feature, input);
+  const data = mappingUpdateData(normalized);
 
   return prisma.planFeatureMapping.update({
     where: { id: mappingId },

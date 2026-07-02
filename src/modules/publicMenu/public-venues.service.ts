@@ -52,7 +52,11 @@ const publicVenueSelect = Prisma.validator<Prisma.VenueSelect>()({
             where: { active: true },
             select: {
               id: true,
-              items: { where: { available: true }, select: { id: true } },
+              _count: {
+                select: {
+                  items: { where: { available: true } },
+                },
+              },
             },
           },
         },
@@ -108,7 +112,8 @@ function buildVenueSearchWhere(query: z.infer<typeof publicVenueListQuerySchema>
 }
 
 function compactPublicBranch(branch: PublicBranchRecord) {
-  const itemCount = branch.menu?.categories.reduce((sum, category) => sum + category.items.length, 0) ?? 0;
+  const itemCount =
+    branch.menu?.categories.reduce((sum, category) => sum + category._count.items, 0) ?? 0;
 
   return {
     id: branch.id,

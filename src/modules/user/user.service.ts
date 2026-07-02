@@ -5,7 +5,7 @@ import { requireVenueAdmin } from '../../common/auth/branch-access';
 import { HttpError } from '../../common/http/http-error';
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
 import { buildPaginationMeta, type PaginationOptions } from '../../common/pagination/pagination';
-import { assertStaffUserCreateAllowed, assertVenueCanMutate } from '../subscription/subscription.service';
+import { assertStaffUserCreateAllowed, assertVenueCanMutate } from '../subscription/plan-guards';
 import type { z } from 'zod';
 import type { createVenueUserSchema, updateUserBranchesSchema } from './user.schemas';
 
