@@ -7,16 +7,20 @@ import {
 } from '../../common/middleware/rate-limit.middleware';
 import { validateRequest } from '../../common/middleware/validate.middleware';
 import {
+  listAdminVerificationCodesController,
   loginController,
   logoutController,
   meController,
   registerController,
+  regenerateAdminVerificationCodeController,
   resendOtpController,
   updateMeController,
   updatePasswordController,
   verifyOtpController,
 } from './auth.controller';
 import {
+  adminVerificationQuerySchema,
+  adminVerificationUserParamsSchema,
   loginSchema,
   registerSchema,
   resendOtpSchema,
@@ -26,6 +30,7 @@ import {
 } from './auth.schemas';
 
 export const authRouter = Router();
+export const adminAuthRouter = Router();
 
 authRouter.post('/register', authRateLimit, codeRateLimit, validateRequest({ body: registerSchema }), registerController);
 authRouter.post('/login', authRateLimit, validateRequest({ body: loginSchema }), loginController);
@@ -41,3 +46,15 @@ authRouter.patch(
   updatePasswordController,
 );
 authRouter.post('/logout', logoutController);
+
+adminAuthRouter.use(requireAuth, authenticatedRateLimit);
+adminAuthRouter.get(
+  '/verification-codes',
+  validateRequest({ query: adminVerificationQuerySchema }),
+  listAdminVerificationCodesController,
+);
+adminAuthRouter.post(
+  '/users/:userId/verification-code/regenerate',
+  validateRequest({ params: adminVerificationUserParamsSchema }),
+  regenerateAdminVerificationCodeController,
+);

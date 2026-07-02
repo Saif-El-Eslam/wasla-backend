@@ -5,6 +5,7 @@
     "internal": "حدث خطأ غير متوقع.",
     "invalidCredentials": "رقم الهاتف أو كلمة المرور غير صحيحة.",
     "phoneNotVerified": "لم يتم التحقق من رقم الهاتف.",
+    "phoneAlreadyVerified": "تم تأكيد رقم الهاتف بالفعل.",
     "phoneAlreadyExists": "يوجد حساب مسجل بهذا الرقم.",
     "userNotFound": "لم يتم العثور على المستخدم.",
     "routeNotFound": "المسار غير موجود: {{method}} {{path}}.",

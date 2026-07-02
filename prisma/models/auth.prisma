@@ -43,6 +43,7 @@ model OtpCode {
   id          String    @id @default(uuid())
   userId      String
   codeHash    String
+  deliveryCodeEncrypted String?
   purpose     OtpPurpose
   expiresAt   DateTime
   consumedAt  DateTime?

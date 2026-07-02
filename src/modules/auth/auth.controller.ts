@@ -4,8 +4,10 @@ import { created, ok } from '../../common/http/response';
 import type { CookieOptions } from 'express';
 import {
   getCurrentUser,
+  listAdminVerificationCodes,
   login,
   register,
+  regenerateAdminVerificationCode,
   resendOtp,
   updateCurrentUser,
   updateCurrentUserPassword,
@@ -64,6 +66,19 @@ export const verifyOtpController = asyncHandler(async (req, res) => {
 export const resendOtpController = asyncHandler(async (req, res) => {
   const result = await resendOtp(req.body);
   ok(res, result);
+});
+
+export const listAdminVerificationCodesController = asyncHandler(async (req, res) => {
+  ok(
+    res,
+    await listAdminVerificationCodes(req.user, {
+      search: String(req.query.search ?? '').trim() || undefined,
+    }),
+  );
+});
+
+export const regenerateAdminVerificationCodeController = asyncHandler(async (req, res) => {
+  ok(res, await regenerateAdminVerificationCode(req.user, String(req.params.userId)));
 });
 
 export const meController = asyncHandler(async (req, res) => {

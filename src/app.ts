@@ -10,7 +10,7 @@ import { requestContextMiddleware } from './common/middleware/request-context.mi
 import { requestLoggerMiddleware } from './common/middleware/request-logger.middleware';
 import { apiRateLimit } from './common/middleware/rate-limit.middleware';
 import { analyticsRouter } from './modules/analytics/analytics.routes';
-import { authRouter } from './modules/auth/auth.routes';
+import { adminAuthRouter, authRouter } from './modules/auth/auth.routes';
 import { branchRouter } from './modules/branch/branch.routes';
 import { extractionRouter } from './modules/extraction/extraction.routes';
 import { healthRouter } from './modules/health/health.routes';
@@ -54,6 +54,7 @@ apiRouter.use(apiRateLimit); // Apply rate limiting to all API routes (overwriti
 apiRouter.use('/health', healthRouter);
 apiRouter.use('/public', publicRouter);
 apiRouter.use('/auth', authRouter);
+apiRouter.use('/admin/auth', adminAuthRouter);
 apiRouter.use('/uploads', imageUploadRouter);
 apiRouter.use('/analytics', analyticsRouter);
 apiRouter.use('/subscription', subscriptionRouter);

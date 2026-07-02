@@ -5,6 +5,7 @@
     "internal": "Internal server error.",
     "invalidCredentials": "Invalid phone number or password.",
     "phoneNotVerified": "Phone number is not verified.",
+    "phoneAlreadyVerified": "Phone number is already verified.",
     "phoneAlreadyExists": "This phone number already has an account.",
     "userNotFound": "User was not found.",
     "routeNotFound": "Route not found: {{method}} {{path}}.",

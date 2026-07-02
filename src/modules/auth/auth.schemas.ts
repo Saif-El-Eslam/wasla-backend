@@ -23,6 +23,14 @@ export const resendOtpSchema = z.object({
   phone: egyptPhoneSchema,
 });
 
+export const adminVerificationQuerySchema = z.object({
+  search: z.string().trim().optional(),
+});
+
+export const adminVerificationUserParamsSchema = z.object({
+  userId: z.uuid(),
+});
+
 export const updateMeSchema = z
   .object({
     name: z.string().trim().min(2).max(120).optional(),
