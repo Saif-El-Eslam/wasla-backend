@@ -7,27 +7,45 @@ type RequestSchema = Partial<{
   query: z.ZodType<unknown>;
 }>;
 
-// This middleware validates the request body, params, and query against the provided Zod schemas. 
+// This middleware validates the request body, params, and query against the provided Zod schemas.
 // If validation fails, it passes the error to the next middleware (typically an error handler).
 export function validateRequest(schema: RequestSchema): RequestHandler {
-  return (req, _res, next) => {
-    try {
-      if (schema.body) {
-        req.body = schema.body.parse(req.body);
+   return (req, res, next) => {
+    const validated: Express.Request['validated'] = {};
+
+    if (schema.body) {
+      const result = schema.body.safeParse(req.body);
+
+      if (!result.success) {
+        return res.status(400).json({ errors: result.error.flatten() });
       }
 
-      if (schema.params) {
-        req.params = schema.params.parse(req.params) as typeof req.params;
-      }
-
-      if (schema.query) {
-        const parsedQuery = schema.query.parse(req.query);
-        Object.assign(req.query, parsedQuery);
-      }
-
-      next();
-    } catch (error) {
-      next(error);
+      validated.body = result.data;
     }
+
+    if (schema.params) {
+      const result = schema.params.safeParse(req.params);
+
+      if (!result.success) {
+        return res.status(400).json({ errors: result.error.flatten() });
+      }
+
+      validated.params = result.data;
+    }
+
+    if (schema.query) {
+      const result = schema.query.safeParse(req.query);
+
+      if (!result.success) {
+        return res.status(400).json({ errors: result.error.flatten() });
+      }
+
+      validated.query = result.data;
+    }
+
+    req.validated = validated;
+
+    next();
+  
   };
 }

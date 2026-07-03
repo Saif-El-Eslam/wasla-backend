@@ -38,6 +38,10 @@ model Venue {
   subscription      Subscription?
   subscriptionHistory SubscriptionHistory[]
   analyticsEvents   AnalyticsEventLog[]
+  transactionCategories TransactionCategory[]
+  paymentMethods    PaymentMethod[]
+  financialTransactions FinancialTransaction[]
+  financialAuditLogs FinancialTransactionAuditLog[]
 
   @@index([ownerId])
 }
@@ -65,6 +69,8 @@ model Branch {
   menu              Menu?
   userAccesses      UserBranchAccess[]
   analyticsEvents   AnalyticsEventLog[]
+  financialTransactions FinancialTransaction[]
+  financialAuditLogs FinancialTransactionAuditLog[]
 
   @@unique([venueId, slug])
   @@index([venueId, isMain])

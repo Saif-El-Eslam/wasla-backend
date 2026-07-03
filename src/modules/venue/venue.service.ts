@@ -3,6 +3,7 @@ import { HttpError } from '../../common/http/http-error';
 import type { LocalizedText } from '../../common/i18n/localized-text';
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
 import { deleteImagesByUrl, imageUrlChanged } from '../../storage/image-storage.service';
+import { seedDefaultFinanceSetup } from '../financial/financial.seed';
 import { assertLanguageLimitAllowed, assertVenueCanMutate } from '../subscription/plan-guards';
 import type { z } from 'zod';
 import type { setupVenueSchema, updateVenueSchema } from './venue.schemas';
@@ -101,6 +102,8 @@ export async function setupVenue(session: SessionPayload | undefined, input: z.i
       where: { id: userId },
       data: { venueId: createdVenue.id },
     });
+
+    await seedDefaultFinanceSetup(createdVenue.id, tx);
 
     return createdVenue;
   });

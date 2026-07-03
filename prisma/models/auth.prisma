@@ -22,6 +22,10 @@ model User {
   otpCodes         OtpCode[]
   branchAccesses   UserBranchAccess[]
   subscriptionHistoryChanges SubscriptionHistory[] @relation("SubscriptionHistoryChangedBy")
+  createdFinancialTransactions FinancialTransaction[] @relation("FinancialTransactionCreatedBy")
+  updatedFinancialTransactions FinancialTransaction[] @relation("FinancialTransactionUpdatedBy")
+  deletedFinancialTransactions FinancialTransaction[] @relation("FinancialTransactionDeletedBy")
+  financialAuditLogs FinancialTransactionAuditLog[] @relation("FinancialAuditActor")
 
   @@index([venueId])
 }

@@ -1,0 +1,108 @@
+enum FinancialTransactionType {
+  IN
+  OUT
+}
+
+enum FinancialAuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  RESTORE
+}
+
+model TransactionCategory {
+  id           String                    @id @default(uuid())
+  venueId      String
+  type         FinancialTransactionType
+  name         Json
+  description  Json?
+  systemKey    String?
+  sortOrder    Int                       @default(0)
+  active       Boolean                   @default(true)
+  deletedAt    DateTime?
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+
+  venue        Venue                     @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  transactions FinancialTransaction[]
+
+  @@unique([venueId, systemKey])
+  @@index([venueId, type, active])
+  @@index([venueId, deletedAt])
+}
+
+model PaymentMethod {
+  id           String    @id @default(uuid())
+  venueId      String
+  name         Json
+  kind         String?
+  systemKey    String?
+  sortOrder    Int       @default(0)
+  active       Boolean   @default(true)
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  venue        Venue     @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  transactions FinancialTransaction[]
+
+  @@unique([venueId, systemKey])
+  @@index([venueId, active])
+  @@index([venueId, deletedAt])
+}
+
+model FinancialTransaction {
+  id              String                    @id @default(uuid())
+  venueId         String
+  branchId        String
+  type            FinancialTransactionType
+  categoryId      String
+  paymentMethodId String?
+  amount          Decimal                   @db.Decimal(12, 2)
+  currency        String                    @default("EGP")
+  occurredAt      DateTime
+  note            String?
+  createdByUserId String?
+  updatedByUserId String?
+  deletedByUserId String?
+  deletedAt       DateTime?
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  venue           Venue                     @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  branch          Branch                    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  category        TransactionCategory       @relation(fields: [categoryId], references: [id])
+  paymentMethod   PaymentMethod?            @relation(fields: [paymentMethodId], references: [id])
+  createdBy       User?                     @relation("FinancialTransactionCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy       User?                     @relation("FinancialTransactionUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  deletedBy       User?                     @relation("FinancialTransactionDeletedBy", fields: [deletedByUserId], references: [id], onDelete: SetNull)
+  auditLogs       FinancialTransactionAuditLog[]
+
+  @@index([venueId, occurredAt])
+  @@index([branchId, occurredAt])
+  @@index([categoryId, occurredAt])
+  @@index([paymentMethodId, occurredAt])
+  @@index([venueId, deletedAt])
+}
+
+model FinancialTransactionAuditLog {
+  id            String               @id @default(uuid())
+  transactionId String
+  venueId        String
+  branchId       String
+  action         FinancialAuditAction
+  actorUserId    String?
+  before         Json?
+  after          Json?
+  createdAt      DateTime             @default(now())
+
+  transaction    FinancialTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  venue          Venue                @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  branch         Branch               @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  actor          User?                @relation("FinancialAuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([transactionId, createdAt])
+  @@index([venueId, createdAt])
+  @@index([branchId, createdAt])
+  @@index([actorUserId])
+}

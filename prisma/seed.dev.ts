@@ -207,6 +207,13 @@ async function seedPlanCatalog() {
     ['STAFF_USERS', { ar: 'Staff users', en: 'Staff users' }, 'NUMBER', 'users', 80],
     ['LANGUAGES', { ar: 'Languages', en: 'Languages' }, 'NUMBER', 'languages', 90],
     ['FINANCE_MODULE', { ar: 'Finance module', en: 'Finance module' }, 'BOOLEAN', null, 100],
+    [
+      'FINANCE_ADVANCED_ANALYTICS',
+      { ar: 'Advanced finance analytics', en: 'Advanced finance analytics' },
+      'BOOLEAN',
+      null,
+      110,
+    ],
   ] as const;
 
   await Promise.all(
@@ -285,6 +292,7 @@ async function seedPlanCatalog() {
         STAFF_USERS: { valueInt: 999999 },
         LANGUAGES: { valueInt: 999999 },
         FINANCE_MODULE: { valueBool: true },
+        FINANCE_ADVANCED_ANALYTICS: { valueBool: true },
       },
     };
 

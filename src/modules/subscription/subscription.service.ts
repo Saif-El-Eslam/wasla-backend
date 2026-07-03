@@ -302,6 +302,8 @@ export async function getVenuePlanContext(venueId: string) {
     customQrAssets: booleanFeature(features, featureKeys.customQrAssets),
     staffUserLimit: numberFeature(features, featureKeys.staffUsers, 2),
     languageLimit: numberFeature(features, featureKeys.languages, 1),
+    financeModule: booleanFeature(features, featureKeys.financeModule),
+    financeAdvancedAnalytics: booleanFeature(features, featureKeys.financeAdvancedAnalytics),
   };
 }
 
@@ -397,6 +399,9 @@ export async function getTenantSubscription(session?: SessionPayload) {
         advancedAnalytics: context.advancedAnalytics,
         qrBranding: context.qrBranding,
         customQrAssets: context.customQrAssets,
+        financeModule: context.financeModule,
+        financeAdvancedAnalytics: context.financeAdvancedAnalytics,
+        financeHistoryMonths: context.financeAdvancedAnalytics ? 12 : 3,
       },
     },
     usage,

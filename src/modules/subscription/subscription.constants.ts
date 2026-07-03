@@ -9,6 +9,7 @@ export const featureKeys = {
   staffUsers: 'STAFF_USERS',
   languages: 'LANGUAGES',
   financeModule: 'FINANCE_MODULE',
+  financeAdvancedAnalytics: 'FINANCE_ADVANCED_ANALYTICS',
 } as const;
 
 export const unlimitedLimit = 999999;

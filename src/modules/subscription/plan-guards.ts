@@ -19,6 +19,8 @@ export const planGuardFeatures = {
   customQrAssets: featureKeys.customQrAssets,
   staffUsers: featureKeys.staffUsers,
   languages: featureKeys.languages,
+  financeModule: featureKeys.financeModule,
+  financeAdvancedAnalytics: featureKeys.financeAdvancedAnalytics,
 } as const;
 
 function monthStart() {
@@ -198,4 +200,58 @@ export async function assertQrAssetAllowed(venueId: string, customAsset = false)
   }
 
   return context;
+}
+
+export async function getFinanceAllowance(venueId: string) {
+  const context = await getVenuePlanContext(venueId);
+  const canUseFinance =
+    context.financeModule &&
+    context.status !== SubscriptionStatus.CANCELED &&
+    context.status !== SubscriptionStatus.EXPIRED;
+  const historyMonths = context.financeAdvancedAnalytics ? 12 : 3;
+
+  return {
+    plan: context.plan,
+    subscriptionStatus: context.status,
+    canUseFinance,
+    canUseAdvancedFinanceAnalytics: context.financeAdvancedAnalytics,
+    historyMonths,
+  };
+}
+
+export async function assertFinanceModuleAllowed(venueId: string) {
+  const allowance = await getFinanceAllowance(venueId);
+
+  if (!allowance.canUseFinance) {
+    throw new HttpError(403, 'errors.financeModuleRequired', {
+      feature: planGuardFeatures.financeModule,
+    });
+  }
+
+  return allowance;
+}
+
+export async function assertFinanceMutationAllowed(venueId: string) {
+  await assertFinanceModuleAllowed(venueId);
+  return assertVenueCanMutate(venueId);
+}
+
+export async function assertFinanceRangeAllowed(venueId: string, from: Date, to: Date) {
+  const allowance = await assertFinanceModuleAllowed(venueId);
+  const maxMs = allowance.historyMonths * 31 * 24 * 60 * 60 * 1000;
+
+  if (to.getTime() < from.getTime()) {
+    throw new HttpError(400, 'errors.invalidDateRange');
+  }
+
+  if (to.getTime() - from.getTime() > maxMs) {
+    throw new HttpError(403, 'errors.financeRangeLimit', {
+      months: allowance.historyMonths,
+      feature: allowance.canUseAdvancedFinanceAnalytics
+        ? planGuardFeatures.financeAdvancedAnalytics
+        : planGuardFeatures.financeModule,
+    });
+  }
+
+  return allowance;
 }

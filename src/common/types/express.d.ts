@@ -9,6 +9,12 @@ declare global {
       locale?: string;
       t?: (key: string, values?: Record<string, string | number>) => string;
       pagination?: PaginationOptions;
+
+      validated?: {
+        body?: unknown;
+        params?: unknown;
+        query?: unknown;
+      };
     }
   }
 }

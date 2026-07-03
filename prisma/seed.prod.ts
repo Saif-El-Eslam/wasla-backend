@@ -29,7 +29,8 @@ async function seedPlanCatalog() {
       ('feature-custom-qr-assets', 'CUSTOM_QR_ASSETS', '{"en":"Custom QR assets","ar":"Custom QR assets"}', 'BOOLEAN', NULL, 70, true, CURRENT_TIMESTAMP),
       ('feature-staff-users', 'STAFF_USERS', '{"en":"Staff users","ar":"Staff users"}', 'NUMBER', 'users', 80, true, CURRENT_TIMESTAMP),
       ('feature-languages', 'LANGUAGES', '{"en":"Languages","ar":"Languages"}', 'NUMBER', 'languages', 90, true, CURRENT_TIMESTAMP),
-      ('feature-finance-module', 'FINANCE_MODULE', '{"en":"Finance module","ar":"Finance module"}', 'BOOLEAN', NULL, 100, true, CURRENT_TIMESTAMP)
+      ('feature-finance-module', 'FINANCE_MODULE', '{"en":"Finance module","ar":"Finance module"}', 'BOOLEAN', NULL, 100, true, CURRENT_TIMESTAMP),
+      ('feature-finance-advanced-analytics', 'FINANCE_ADVANCED_ANALYTICS', '{"en":"Advanced finance analytics","ar":"Advanced finance analytics"}', 'BOOLEAN', NULL, 110, true, CURRENT_TIMESTAMP)
     ON CONFLICT ("key") DO UPDATE SET
       "name" = EXCLUDED."name", "valueType" = EXCLUDED."valueType", "unit" = EXCLUDED."unit",
       "displayOrder" = EXCLUDED."displayOrder", "active" = EXCLUDED."active", "updatedAt" = CURRENT_TIMESTAMP;
@@ -49,6 +50,7 @@ async function seedPlanCatalog() {
         WHEN 'ADVANCED_ANALYTICS' THEN p."code" IN ('MENU_PRO', 'MENU_MULTI_BRANCH', 'WASLA_COMPLETE')
         WHEN 'CUSTOM_QR_ASSETS' THEN p."code" IN ('MENU_MULTI_BRANCH', 'WASLA_COMPLETE')
         WHEN 'FINANCE_MODULE' THEN p."code" = 'WASLA_COMPLETE'
+        WHEN 'FINANCE_ADVANCED_ANALYTICS' THEN p."code" = 'WASLA_COMPLETE'
         ELSE NULL
       END,
       CASE f."key"
