@@ -4,6 +4,7 @@ import { prisma } from '../../database/prisma';
 import { requireBranchAccess } from '../../common/auth/branch-access';
 import { HttpError } from '../../common/http/http-error';
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
+import { analyticsStatsByMenuIds, menuAnalyticsSnapshot } from '../analytics/analytics-event-log-stats';
 import { assertQrAssetAllowed } from '../subscription/plan-guards';
 import { qrBrandingLevels } from '../subscription/subscription.constants';
 import { renderPosterPng, renderQrPng, renderQrSvg } from './qr.renderer';
@@ -179,6 +180,7 @@ export async function getBranchQrAssets(
   const plan = await assertQrAssetAllowed(menu.branch.venueId);
   const qrCode = qrRecordPayload(menu, context);
   const renderOptions = qrBrandingRenderOptions(plan);
+  const statsByMenuId = await analyticsStatsByMenuIds([menu.id]);
   const preview = await renderQrPng({
     menu,
     requestedLocale,
@@ -205,7 +207,7 @@ export async function getBranchQrAssets(
       id: menu.id,
       publishedAt: menu.publishedAt,
       qrCode,
-      analytics: menu.analytics,
+      analytics: menuAnalyticsSnapshot(menu.id, statsByMenuId.get(menu.id)),
     },
     qrBranding: {
       level: plan.qrBranding,

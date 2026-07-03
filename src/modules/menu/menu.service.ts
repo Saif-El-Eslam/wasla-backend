@@ -4,6 +4,7 @@ import { requireBranchAccess } from '../../common/auth/branch-access';
 import { HttpError } from '../../common/http/http-error';
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
 import { deleteImageByUrl, deleteImagesByUrl, imageUrlChanged } from '../../storage/image-storage.service';
+import { analyticsStatsByMenuIds, menuAnalyticsSnapshot } from '../analytics/analytics-event-log-stats';
 import { assertBranchMutationAllowed } from '../subscription/plan-guards';
 import type { z } from 'zod';
 import type {
@@ -17,6 +18,21 @@ import type {
   updateItemSchema,
   updateMenuSchema,
 } from './menu.schemas';
+
+const managedMenuInclude = Prisma.validator<Prisma.MenuInclude>()({
+  qrCode: true,
+  categories: {
+    orderBy: { sortOrder: 'asc' },
+    include: {
+      items: {
+        orderBy: { sortOrder: 'asc' },
+        include: {
+          prices: { orderBy: { sortOrder: 'asc' } },
+        },
+      },
+    },
+  },
+});
 
 async function requireBranchMenu(session: SessionPayload | undefined, branchId: string) {
   const { user } = await requireBranchAccess(session, branchId);
@@ -80,27 +96,28 @@ function buildPriceRows(
   return undefined;
 }
 
+async function addMenuAnalyticsSnapshot<T extends { id: string }>(menu: T | null) {
+  if (!menu) {
+    return menu;
+  }
+
+  const statsByMenuId = await analyticsStatsByMenuIds([menu.id]);
+
+  return {
+    ...menu,
+    analytics: menuAnalyticsSnapshot(menu.id, statsByMenuId.get(menu.id)),
+  };
+}
+
 export async function getBranchMenu(session: SessionPayload | undefined, branchId: string) {
   await requireBranchAccess(session, branchId);
 
-  return prisma.menu.findUnique({
+  const menu = await prisma.menu.findUnique({
     where: { branchId },
-    include: {
-      qrCode: true,
-      analytics: true,
-      categories: {
-        orderBy: { sortOrder: 'asc' },
-        include: {
-          items: {
-            orderBy: { sortOrder: 'asc' },
-            include: {
-              prices: { orderBy: { sortOrder: 'asc' } },
-            },
-          },
-        },
-      },
-    },
+    include: managedMenuInclude,
   });
+
+  return addMenuAnalyticsSnapshot(menu);
 }
 
 export async function createBranchMenu(
@@ -112,7 +129,7 @@ export async function createBranchMenu(
   await assertBranchMutationAllowed(user.venueId, branchId);
   const shortCode = crypto.randomUUID().slice(0, 8);
 
-  return prisma.menu.create({
+  const menu = await prisma.menu.create({
     data: {
       branchId,
       theme: input.theme,
@@ -123,12 +140,11 @@ export async function createBranchMenu(
           targetUrl: `/public/m/${shortCode}`,
         },
       },
-      analytics: {
-        create: {},
-      },
     },
-    include: { qrCode: true, analytics: true, categories: { include: { items: true } } },
+    include: { qrCode: true, categories: { include: { items: true } } },
   });
+
+  return addMenuAnalyticsSnapshot(menu);
 }
 
 export async function updateBranchMenu(
@@ -138,18 +154,13 @@ export async function updateBranchMenu(
 ) {
   const menu = await requireBranchMenu(session, branchId);
 
-  return prisma.menu.update({
+  const updatedMenu = await prisma.menu.update({
     where: { id: menu.id },
     data: input,
-    include: {
-      qrCode: true,
-      analytics: true,
-      categories: {
-        include: { items: { include: { prices: { orderBy: { sortOrder: 'asc' } } } } },
-        orderBy: { sortOrder: 'asc' },
-      },
-    },
+    include: managedMenuInclude,
   });
+
+  return addMenuAnalyticsSnapshot(updatedMenu);
 }
 
 export async function deleteBranchMenu(session: SessionPayload | undefined, branchId: string) {
@@ -177,21 +188,25 @@ export async function deleteBranchMenu(session: SessionPayload | undefined, bran
 export async function publishBranchMenu(session: SessionPayload | undefined, branchId: string) {
   const menu = await requireBranchMenu(session, branchId);
 
-  return prisma.menu.update({
+  const updatedMenu = await prisma.menu.update({
     where: { id: menu.id },
     data: { publishedAt: new Date() },
-    include: { qrCode: true, analytics: true },
+    include: { qrCode: true },
   });
+
+  return addMenuAnalyticsSnapshot(updatedMenu);
 }
 
 export async function unpublishBranchMenu(session: SessionPayload | undefined, branchId: string) {
   const menu = await requireBranchMenu(session, branchId);
 
-  return prisma.menu.update({
+  const updatedMenu = await prisma.menu.update({
     where: { id: menu.id },
     data: { publishedAt: null },
-    include: { qrCode: true, analytics: true },
+    include: { qrCode: true },
   });
+
+  return addMenuAnalyticsSnapshot(updatedMenu);
 }
 
 export async function createCategory(

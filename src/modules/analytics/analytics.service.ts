@@ -31,81 +31,6 @@ function dayKey(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
-function isMissingAnalyticsLogTable(error: unknown) {
-  return Boolean(error && typeof error === 'object' && 'code' in error && error.code === 'P2021');
-}
-
-async function getAnalyticsFallback(
-  session: SessionPayload | undefined,
-  query: z.infer<typeof analyticsQuerySchema>,
-  branches: Array<{ id: string; name: unknown; slug: string }>,
-) {
-  const menus = await prisma.menu.findMany({
-    where: {
-      branchId: { in: branches.map((branch) => branch.id) },
-    },
-    select: {
-      branchId: true,
-      analytics: true,
-      categories: {
-        orderBy: { sortOrder: 'asc' },
-        select: {
-          items: {
-            orderBy: { sortOrder: 'asc' },
-            take: 5,
-            select: {
-              id: true,
-              name: true,
-              available: true,
-              sortOrder: true,
-            },
-          },
-        },
-      },
-    },
-  });
-  const totals = menus.reduce(
-    (acc, menu) => {
-      acc.views += menu.analytics?.viewCount ?? 0;
-      acc.scans += menu.analytics?.qrScanCount ?? 0;
-      acc.whatsapp += menu.analytics?.whatsappClicks ?? 0;
-      acc.calls += menu.analytics?.callClicks ?? 0;
-      acc.maps += menu.analytics?.mapsClicks ?? 0;
-      return acc;
-    },
-    { venueViews: 0, views: 0, categoryViews: 0, itemViews: 0, scans: 0, whatsapp: 0, calls: 0, maps: 0 },
-  );
-  const metrics = Object.fromEntries(
-    (Object.keys(metricEventMap) as MetricKey[]).map((key) => [
-      key,
-      { current: totals[key], previous: 0, change: totals[key] > 0 ? 100 : 0 },
-    ]),
-  ) as Record<MetricKey, { current: number; previous: number; change: number }>;
-  const branchActivity = branches.map((branch) => {
-    const menu = menus.find((item) => item.branchId === branch.id);
-    return {
-      branchId: branch.id,
-      name: branch.name,
-      slug: branch.slug,
-      value: (menu?.analytics?.viewCount ?? 0) + (menu?.analytics?.qrScanCount ?? 0),
-    };
-  });
-  const topItems = menus
-    .flatMap((menu) => menu.categories.flatMap((category) => category.items))
-    .sort((a, b) => Number(b.available) - Number(a.available) || a.sortOrder - b.sortOrder)
-    .slice(0, 5)
-    .map((item) => ({ itemId: item.id, name: item.name, views: 0 }));
-
-  return {
-    period: query.period,
-    branchId: query.branchId ?? null,
-    metrics,
-    series: [],
-    branchActivity,
-    topItems,
-  };
-}
-
 export async function getAnalyticsSummary(
   session: SessionPayload | undefined,
   query: z.infer<typeof analyticsQuerySchema>,
@@ -135,9 +60,8 @@ export async function getAnalyticsSummary(
     item: { name: unknown } | null;
   }> = [];
 
-  try {
-    events = branchIds.length
-      ? await prisma.analyticsEventLog.findMany({
+  events = branchIds.length
+    ? await prisma.analyticsEventLog.findMany({
         where: {
           venueId: user.venueId,
           branchId: { in: branchIds },
@@ -151,15 +75,8 @@ export async function getAnalyticsSummary(
           branch: { select: { name: true, slug: true } },
           item: { select: { name: true } },
         },
-        })
-      : [];
-  } catch (error) {
-    if (isMissingAnalyticsLogTable(error)) {
-      return getAnalyticsFallback(session, query, branches);
-    }
-
-    throw error;
-  }
+      })
+    : [];
 
   const metrics = Object.fromEntries(
     (Object.keys(metricEventMap) as MetricKey[]).map((key) => {

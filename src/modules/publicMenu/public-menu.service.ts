@@ -5,7 +5,6 @@ import { recordPublicAnalytics } from './public-analytics.service';
 
 const publicMenuInclude = Prisma.validator<Prisma.MenuInclude>()({
   qrCode: true,
-  analytics: true,
   categories: {
     where: { active: true },
     orderBy: { sortOrder: 'asc' },

@@ -10,7 +10,18 @@ import {
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
 import { buildPaginationMeta, type PaginationOptions } from '../../common/pagination/pagination';
 import { deleteImagesByUrl, imageUrlChanged } from '../../storage/image-storage.service';
-import { assertBranchCreateAllowed, assertBranchMutationAllowed, assertVenueCanMutate } from '../subscription/plan-guards';
+import {
+  analyticsStatsByBranchIds,
+  analyticsStatsByMenuIds,
+  analyticsStatsOrEmpty,
+  menuAnalyticsSnapshot,
+  type AnalyticsStats,
+} from '../analytics/analytics-event-log-stats';
+import {
+  assertBranchCreateAllowed,
+  assertBranchMutationAllowed,
+  assertVenueCanMutate,
+} from '../subscription/plan-guards';
 import type { z } from 'zod';
 import type { createBranchSchema, updateBranchSchema } from './branch.schemas';
 
@@ -18,7 +29,6 @@ const branchMenuInclude = Prisma.validator<Prisma.BranchInclude>()({
   menu: {
     include: {
       qrCode: true,
-      analytics: true,
       categories: {
         orderBy: { sortOrder: 'asc' },
         include: {
@@ -54,7 +64,6 @@ const branchStatsSelect = Prisma.validator<Prisma.BranchSelect>()({
     select: {
       id: true,
       publishedAt: true,
-      analytics: true,
       categories: {
         select: {
           id: true,
@@ -71,19 +80,21 @@ type BranchListFilters = {
   search?: string;
 };
 
-function statsForBranch(branch: BranchWithStats) {
+function statsForBranch(branch: BranchWithStats, analytics?: AnalyticsStats) {
+  const eventStats = analyticsStatsOrEmpty(analytics);
+
   return {
     categories: branch.menu?.categories.length ?? 0,
     items: branch.menu?.categories.reduce((sum, category) => sum + category.items.length, 0) ?? 0,
-    views: branch.menu?.analytics?.viewCount ?? 0,
-    scans: branch.menu?.analytics?.qrScanCount ?? 0,
-    whatsapp: branch.menu?.analytics?.whatsappClicks ?? 0,
-    calls: branch.menu?.analytics?.callClicks ?? 0,
-    maps: branch.menu?.analytics?.mapsClicks ?? 0,
+    views: eventStats.views,
+    scans: eventStats.scans,
+    whatsapp: eventStats.whatsapp,
+    calls: eventStats.calls,
+    maps: eventStats.maps,
   };
 }
 
-function compactBranch(branch: BranchWithStats) {
+function compactBranch(branch: BranchWithStats, analytics?: AnalyticsStats) {
   return {
     id: branch.id,
     venueId: branch.venueId,
@@ -103,8 +114,23 @@ function compactBranch(branch: BranchWithStats) {
     menuId: branch.menu?.id ?? null,
     hasMenu: Boolean(branch.menu),
     publishedAt: branch.menu?.publishedAt ?? null,
-    stats: statsForBranch(branch),
+    stats: statsForBranch(branch, analytics),
   };
+}
+
+async function addMenuAnalyticsSnapshots<T extends { menu: { id: string } | null }>(branches: T[]) {
+  const menuIds = branches.flatMap((branch) => (branch.menu ? [branch.menu.id] : []));
+  const statsByMenuId = await analyticsStatsByMenuIds(menuIds);
+
+  return branches.map((branch) => ({
+    ...branch,
+    menu: branch.menu
+      ? {
+          ...branch.menu,
+          analytics: menuAnalyticsSnapshot(branch.menu.id, statsByMenuId.get(branch.menu.id)),
+        }
+      : branch.menu,
+  }));
 }
 
 function buildBranchSearchWhere(search?: string): Prisma.BranchWhereInput {
@@ -141,7 +167,7 @@ export async function listBranches(
       include: branchMenuInclude,
     });
 
-    return { branches };
+    return { branches: await addMenuAnalyticsSnapshots(branches) };
   }
 
   const paginationOptions = pagination ?? {
@@ -163,7 +189,7 @@ export async function listBranches(
   ]);
 
   return {
-    branches,
+    branches: await addMenuAnalyticsSnapshots(branches),
     pagination: buildPaginationMeta(total, paginationOptions),
   };
 }
@@ -193,9 +219,10 @@ export async function getBranchesOverview(session?: SessionPayload) {
     orderBy: [{ isMain: 'desc' }, { createdAt: 'asc' }],
     select: branchStatsSelect,
   });
+  const statsByBranchId = await analyticsStatsByBranchIds(branches.map((branch) => branch.id));
   const totals = branches.reduce(
     (acc, branch) => {
-      const stats = statsForBranch(branch);
+      const stats = statsForBranch(branch, statsByBranchId.get(branch.id));
       acc.menus += branch.menu ? 1 : 0;
       acc.items += stats.items;
       acc.views += stats.views;
@@ -215,7 +242,7 @@ export async function getBranchesOverview(session?: SessionPayload) {
       slug: branch.slug,
       active: branch.active,
       hasMenu: Boolean(branch.menu),
-      stats: statsForBranch(branch),
+      stats: statsForBranch(branch, statsByBranchId.get(branch.id)),
     })),
     totals,
     userCount,
@@ -230,8 +257,11 @@ export async function listManagementBranches(session?: SessionPayload) {
     orderBy: [{ isMain: 'desc' }, { createdAt: 'asc' }],
     select: branchStatsSelect,
   });
+  const statsByBranchId = await analyticsStatsByBranchIds(branches.map((branch) => branch.id));
 
-  return { branches: branches.map(compactBranch) };
+  return {
+    branches: branches.map((branch) => compactBranch(branch, statsByBranchId.get(branch.id))),
+  };
 }
 
 export async function getBranchQr(session: SessionPayload | undefined, branchId: string) {
@@ -246,9 +276,9 @@ export async function getBranchQr(session: SessionPayload | undefined, branchId:
       id: true,
       publishedAt: true,
       qrCode: true,
-      analytics: true,
     },
   });
+  const statsByMenuId = menu ? await analyticsStatsByMenuIds([menu.id]) : new Map();
 
   return {
     branch: {
@@ -258,7 +288,9 @@ export async function getBranchQr(session: SessionPayload | undefined, branchId:
       phone: branch.phone,
       venueSlug: venue?.slug ?? null,
     },
-    menu,
+    menu: menu
+      ? { ...menu, analytics: menuAnalyticsSnapshot(menu.id, statsByMenuId.get(menu.id)) }
+      : menu,
   };
 }
 
@@ -309,9 +341,6 @@ export async function createBranch(
             shortCode,
             targetUrl: `/public/m/${shortCode}`,
           },
-        },
-        analytics: {
-          create: {},
         },
       },
     });
@@ -364,8 +393,12 @@ export async function updateBranch(
   });
 
   await deleteImagesByUrl([
-    input.logoUrl !== undefined && imageUrlChanged(branch.logoUrl, updatedBranch.logoUrl) ? branch.logoUrl : null,
-    input.coverUrl !== undefined && imageUrlChanged(branch.coverUrl, updatedBranch.coverUrl) ? branch.coverUrl : null,
+    input.logoUrl !== undefined && imageUrlChanged(branch.logoUrl, updatedBranch.logoUrl)
+      ? branch.logoUrl
+      : null,
+    input.coverUrl !== undefined && imageUrlChanged(branch.coverUrl, updatedBranch.coverUrl)
+      ? branch.coverUrl
+      : null,
   ]);
 
   return updatedBranch;
@@ -455,7 +488,9 @@ export async function deleteBranch(session: SessionPayload | undefined, branchId
       branch.logoUrl,
       branch.coverUrl,
       ...(branch.menu?.categories.map((category) => category.imageUrl) ?? []),
-      ...(branch.menu?.categories.flatMap((category) => category.items.map((item) => item.imageUrl)) ?? []),
+      ...(branch.menu?.categories.flatMap((category) =>
+        category.items.map((item) => item.imageUrl),
+      ) ?? []),
     ]);
 
     return { deleted: true };
@@ -466,7 +501,9 @@ export async function deleteBranch(session: SessionPayload | undefined, branchId
     branch.logoUrl,
     branch.coverUrl,
     ...(branch.menu?.categories.map((category) => category.imageUrl) ?? []),
-    ...(branch.menu?.categories.flatMap((category) => category.items.map((item) => item.imageUrl)) ?? []),
+    ...(branch.menu?.categories.flatMap((category) =>
+      category.items.map((item) => item.imageUrl),
+    ) ?? []),
   ]);
   return { deleted: true };
 }

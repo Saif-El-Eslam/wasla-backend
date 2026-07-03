@@ -6,7 +6,6 @@ export type QrUrlContext = {
 
 export const qrInclude = Prisma.validator<Prisma.MenuInclude>()({
   qrCode: true,
-  analytics: true,
   branch: {
     include: {
       venue: true,

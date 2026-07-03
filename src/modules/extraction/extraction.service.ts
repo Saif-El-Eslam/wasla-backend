@@ -27,7 +27,6 @@ type UploadedImage = {
 
 const menuInclude = Prisma.validator<Prisma.MenuInclude>()({
   qrCode: true,
-  analytics: true,
   categories: {
     orderBy: { sortOrder: 'asc' },
     include: {
@@ -132,9 +131,6 @@ async function ensureBranchMenu(branchId: string, _branchName: Prisma.JsonValue)
           shortCode,
           targetUrl: `/public/m/${shortCode}`,
         },
-      },
-      analytics: {
-        create: {},
       },
     },
     include: menuInclude,
