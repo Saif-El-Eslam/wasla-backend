@@ -2,9 +2,11 @@ import { app } from './app';
 import { env } from './config/env';
 import { translate } from './common/i18n/i18n';
 import { connectDatabase, disconnectDatabase } from './database/prisma';
+import { startExtractionJobMaintenance } from './modules/extraction/extraction.service';
 
 async function bootstrap() {
   await connectDatabase();
+  const stopExtractionJobMaintenance = startExtractionJobMaintenance();
 
   const server = app.listen(env.PORT, () => {
     console.log(translate('en', 'logs.serverStarted', { port: env.PORT, prefix: env.API_PREFIX }));
@@ -12,6 +14,7 @@ async function bootstrap() {
 
   async function shutdown(signal: string) {
     console.log(`${signal} received, shutting down`);
+    stopExtractionJobMaintenance();
     server.close(async () => {
       await disconnectDatabase();
       process.exit(0);

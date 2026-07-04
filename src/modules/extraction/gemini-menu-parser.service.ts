@@ -15,6 +15,44 @@ type ParserResult = {
   warnings: string[];
 };
 
+type ParserOptions = {
+  jobId?: string;
+  signal?: AbortSignal;
+};
+
+function parserLog(options: ParserOptions, phase: string, details: Record<string, unknown> = {}) {
+  console.log(
+    `[extraction:parser] ${JSON.stringify({
+      jobId: options.jobId ?? null,
+      phase,
+      ...details,
+    })}`,
+  );
+}
+
+function errorDetails(error: unknown) {
+  if (error instanceof HttpError) {
+    return {
+      type: error.constructor.name,
+      messageKey: error.messageKey,
+      statusCode: error.statusCode,
+    };
+  }
+
+  if (error instanceof Error) {
+    return {
+      type: error.constructor.name,
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+
+  return {
+    type: typeof error,
+    message: String(error),
+  };
+}
+
 function promptForMenuExtraction() {
   return `
 You are a professional menu extraction assistant.
@@ -66,7 +104,10 @@ async function prepareInlineImages(images: ParserImage[]) {
     throw new HttpError(413, 'errors.extractionImagesTooLarge');
   }
 
-  return prepared.map(({ byteLength: _byteLength, ...image }) => image);
+  return {
+    inlineImages: prepared.map(({ byteLength: _byteLength, ...image }) => image),
+    totalBytes,
+  };
 }
 
 function buildResponseSchema(Type: {
@@ -198,30 +239,81 @@ function confidenceFor(menu: ExtractedMenu) {
   );
 }
 
-export async function parseMenuImages(images: ParserImage[]): Promise<ParserResult> {
-  if (!env.GEMINI_API_KEY) {
-    throw new HttpError(503, 'errors.geminiNotConfigured');
-  }
+export async function parseMenuImages(
+  images: ParserImage[],
+  options: ParserOptions = {},
+): Promise<ParserResult> {
+  const startedAt = Date.now();
+  const originalBytes = images.reduce((sum, image) => sum + image.buffer.byteLength, 0);
 
-  const { GoogleGenAI, Type } = await import('@google/genai');
-  const inlineImages = await prepareInlineImages(images);
-  const client = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
-  const result = await client.models.generateContent({
+  parserLog(options, 'started', {
+    imageCount: images.length,
+    originalBytes,
+    mimeTypes: Array.from(new Set(images.map((image) => image.mimeType))),
     model: env.GEMINI_MODEL,
-    contents: [promptForMenuExtraction(), ...inlineImages],
-    config: {
-      responseMimeType: 'application/json',
-      responseSchema: buildResponseSchema(Type),
-      temperature: env.GEMINI_TEMPERATURE,
-    },
   });
-  const rawModelResponse = String(result.text ?? '');
-  const parsed = extractedMenuSchema.parse(parseJsonResponse(rawModelResponse));
 
-  return {
-    extractedMenu: parsed,
-    confidenceScore: confidenceFor(parsed),
-    rawModelResponse,
-    warnings: parsed.warnings,
-  };
+  try {
+    if (!env.GEMINI_API_KEY) {
+      throw new HttpError(503, 'errors.geminiNotConfigured');
+    }
+
+    parserLog(options, 'importing_sdk');
+    const { GoogleGenAI, Type } = await import('@google/genai');
+
+    parserLog(options, 'preparing_images');
+    const prepared = await prepareInlineImages(images);
+    parserLog(options, 'images_prepared', {
+      inlineImageCount: prepared.inlineImages.length,
+      inlineBytes: prepared.totalBytes,
+      maxInlineBytes: env.GEMINI_MAX_INLINE_REQUEST_MB * 1024 * 1024,
+    });
+
+    const client = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
+    parserLog(options, 'gemini_request_started', {
+      temperature: env.GEMINI_TEMPERATURE,
+    });
+
+    const result = await client.models.generateContent({
+      model: env.GEMINI_MODEL,
+      contents: [promptForMenuExtraction(), ...prepared.inlineImages],
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: buildResponseSchema(Type),
+        temperature: env.GEMINI_TEMPERATURE,
+        abortSignal: options.signal,
+      },
+    });
+    const rawModelResponse = String(result.text ?? '');
+    parserLog(options, 'gemini_response_received', {
+      durationMs: Date.now() - startedAt,
+      rawResponseChars: rawModelResponse.length,
+    });
+
+    parserLog(options, 'parsing_response');
+    const parsed = extractedMenuSchema.parse(parseJsonResponse(rawModelResponse));
+    const confidenceScore = confidenceFor(parsed);
+    const itemCount = parsed.categories.reduce((sum, category) => sum + category.items.length, 0);
+
+    parserLog(options, 'completed', {
+      durationMs: Date.now() - startedAt,
+      categoryCount: parsed.categories.length,
+      itemCount,
+      warningCount: parsed.warnings.length,
+      confidenceScore,
+    });
+
+    return {
+      extractedMenu: parsed,
+      confidenceScore,
+      rawModelResponse,
+      warnings: parsed.warnings,
+    };
+  } catch (error) {
+    parserLog(options, 'failed', {
+      durationMs: Date.now() - startedAt,
+      error: errorDetails(error),
+    });
+    throw error;
+  }
 }

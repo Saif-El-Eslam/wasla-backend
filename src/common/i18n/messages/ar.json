@@ -61,6 +61,7 @@
     "extractionRejectNotAllowed": "يمكن فقط رفض مهام الاستخراج المكتملة أو الفاشلة.",
     "extractionMissingResult": "نتيجة استخراج البيانات مفقودة.",
     "extractionInvalidModelResponse": "أرجع نموذج Gemini استجابة فارغة أو غير صالحة لقائمة الطعام.",
+    "extractionTimedOut": "استغرقت عملية الاستخراج وقتاً طويلاً وتم إيقافها. يرجى المحاولة مرة أخرى.",
     "extractionApplyFailed": "تعذر تطبيق عملية الاستخراج التي تمت مراجعتها على قائمة الطعام هذه."
   },
   "logs": {

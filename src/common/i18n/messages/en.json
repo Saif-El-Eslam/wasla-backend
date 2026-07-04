@@ -61,6 +61,7 @@
     "extractionRejectNotAllowed": "Only completed or failed extraction jobs can be rejected.",
     "extractionMissingResult": "Extraction result is missing.",
     "extractionInvalidModelResponse": "Gemini returned an empty or invalid menu response.",
+    "extractionTimedOut": "Extraction took too long and was stopped. Please try again.",
     "extractionApplyFailed": "The reviewed extraction could not be applied to this menu."
   },
   "logs": {

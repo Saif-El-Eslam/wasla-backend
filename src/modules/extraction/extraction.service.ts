@@ -25,6 +25,11 @@ type UploadedImage = {
   mimeType: string;
 };
 
+const ACTIVE_EXTRACTION_STATUSES = [
+  ExtractionJobStatus.PENDING,
+  ExtractionJobStatus.PROCESSING,
+] as const;
+
 const menuInclude = Prisma.validator<Prisma.MenuInclude>()({
   qrCode: true,
   categories: {
@@ -141,12 +146,112 @@ function compactJob(job: Prisma.ExtractionJobGetPayload<object>) {
   return job;
 }
 
+function extractionTimedOutError() {
+  return new HttpError(504, 'errors.extractionTimedOut');
+}
+
+function extractionErrorText(error: unknown) {
+  return error instanceof HttpError
+    ? translate('en', error.messageKey, error.interpolation)
+    : error instanceof Error
+      ? error.message
+      : 'Extraction failed';
+}
+
+function staleExtractionCutoff() {
+  const staleAfterMs = Math.max(
+    env.EXTRACTION_STALE_JOB_AFTER_MS,
+    env.GEMINI_EXTRACTION_TIMEOUT_MS + 30_000,
+  );
+
+  return new Date(Date.now() - staleAfterMs);
+}
+
+async function markExtractionJobFailed(jobId: string, errorText: string) {
+  await prisma.extractionJob.updateMany({
+    where: {
+      id: jobId,
+      status: { in: [...ACTIVE_EXTRACTION_STATUSES] },
+    },
+    data: {
+      status: ExtractionJobStatus.FAILED,
+      errors: [errorText],
+    },
+  });
+}
+
+async function parseMenuImagesWithTimeout(jobId: string, images: UploadedImage[]) {
+  const controller = new AbortController();
+  let timeout: NodeJS.Timeout | undefined;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      controller.abort();
+      reject(extractionTimedOutError());
+    }, env.GEMINI_EXTRACTION_TIMEOUT_MS);
+    timeout.unref?.();
+  });
+
+  try {
+    return await Promise.race([
+      parseMenuImages(images, { jobId, signal: controller.signal }),
+      timeoutPromise,
+    ]);
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw extractionTimedOutError();
+    }
+
+    throw error;
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+}
+
+export async function failStaleExtractionJobs(
+  where: { venueId?: string; branchId?: string; jobId?: string } = {},
+) {
+  return prisma.extractionJob.updateMany({
+    where: {
+      id: where.jobId,
+      venueId: where.venueId,
+      branchId: where.branchId,
+      status: { in: [...ACTIVE_EXTRACTION_STATUSES] },
+      updatedAt: { lt: staleExtractionCutoff() },
+    },
+    data: {
+      status: ExtractionJobStatus.FAILED,
+      errors: [translate('ar', 'errors.extractionTimedOut')],
+    },
+  });
+}
+
+export function startExtractionJobMaintenance() {
+  void failStaleExtractionJobs().catch((error) => {
+    console.error('[extraction] Failed to sweep stale extraction jobs', error);
+  });
+
+  const interval = setInterval(() => {
+    void failStaleExtractionJobs().catch((error) => {
+      console.error('[extraction] Failed to sweep stale extraction jobs', error);
+    });
+  }, env.EXTRACTION_STALE_SWEEP_INTERVAL_MS);
+  interval.unref?.();
+
+  return () => {
+    clearInterval(interval);
+  };
+}
+
 async function requireJobForBranch(
   session: SessionPayload | undefined,
   branchId: string,
   jobId: string,
 ) {
   const { user } = await requireBranchAccess(session, branchId);
+  await failStaleExtractionJobs({ venueId: user.venueId, branchId, jobId });
   const job = await prisma.extractionJob.findFirst({
     where: {
       id: jobId,
@@ -163,16 +268,20 @@ async function requireJobForBranch(
 }
 
 async function processExtractionJob(jobId: string, images: UploadedImage[]) {
-  await prisma.extractionJob.update({
-    where: { id: jobId },
-    data: { status: ExtractionJobStatus.PROCESSING, errors: [] },
-  });
-
   try {
-    const parsed = await parseMenuImages(images);
+    const started = await prisma.extractionJob.updateMany({
+      where: { id: jobId, status: ExtractionJobStatus.PENDING },
+      data: { status: ExtractionJobStatus.PROCESSING, errors: [] },
+    });
 
-    await prisma.extractionJob.update({
-      where: { id: jobId },
+    if (started.count === 0) {
+      return;
+    }
+
+    const parsed = await parseMenuImagesWithTimeout(jobId, images);
+
+    await prisma.extractionJob.updateMany({
+      where: { id: jobId, status: ExtractionJobStatus.PROCESSING },
       data: {
         status: ExtractionJobStatus.COMPLETED,
         extractedMenu: parsed.extractedMenu as Prisma.InputJsonValue,
@@ -183,20 +292,7 @@ async function processExtractionJob(jobId: string, images: UploadedImage[]) {
       },
     });
   } catch (error) {
-    const errorText =
-      error instanceof HttpError
-        ? translate('en', error.messageKey, error.interpolation)
-        : error instanceof Error
-          ? error.message
-          : 'Extraction failed';
-
-    await prisma.extractionJob.update({
-      where: { id: jobId },
-      data: {
-        status: ExtractionJobStatus.FAILED,
-        errors: [errorText],
-      },
-    });
+    await markExtractionJobFailed(jobId, extractionErrorText(error));
   }
 }
 
@@ -206,11 +302,13 @@ export async function startExtractionJob(
   images: UploadedImage[],
 ) {
   const { user, branch } = await requireBranchAccess(session, branchId);
-
+  console.log('HERE');
   if (images.length === 0) {
     throw new HttpError(400, 'errors.extractionImagesRequired');
   }
+  console.log('HERE');
 
+  await failStaleExtractionJobs({ venueId: user.venueId });
   await assertBranchMutationAllowed(user.venueId, branchId);
   await assertExtractionAllowed(user.venueId, images.length);
   const menu = await ensureBranchMenu(branchId, branch.name);
@@ -225,8 +323,12 @@ export async function startExtractionJob(
       imageCount: images.length,
     },
   });
+  console.log('HERE');
 
-  void processExtractionJob(job.id, images);
+  void processExtractionJob(job.id, images).catch((error) => {
+    console.error(`[extraction] Unhandled extraction job failure jobId=${job.id}`, error);
+  });
+  console.log('HERE');
 
   return {
     job: compactJob(job),
@@ -255,6 +357,7 @@ export async function getLatestExtractionJob(
   branchId: string,
 ) {
   const { user } = await requireBranchAccess(session, branchId);
+  await failStaleExtractionJobs({ venueId: user.venueId, branchId });
   const job = await prisma.extractionJob.findFirst({
     where: { branchId, venueId: user.venueId },
     orderBy: { createdAt: 'desc' },

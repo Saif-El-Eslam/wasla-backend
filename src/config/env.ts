@@ -32,6 +32,9 @@ const envSchema = z.object({
   GEMINI_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.1),
   GEMINI_MAX_IMAGES_PER_EXTRACTION: z.coerce.number().int().positive().default(8),
   GEMINI_MAX_INLINE_REQUEST_MB: z.coerce.number().int().positive().default(20),
+  GEMINI_EXTRACTION_TIMEOUT_MS: z.coerce.number().int().positive().default(600_000),
+  EXTRACTION_STALE_JOB_AFTER_MS: z.coerce.number().int().positive().default(660_000),
+  EXTRACTION_STALE_SWEEP_INTERVAL_MS: z.coerce.number().int().positive().default(300_000),
 });
 
 export const env = envSchema.parse(process.env);
