@@ -40,30 +40,92 @@ const transactionInclude = Prisma.validator<Prisma.FinancialTransactionInclude>(
 
 type FinancialUser = Awaited<ReturnType<typeof requireAccessUser>>;
 
-function startOfDay(date = new Date()) {
-  const next = new Date(date);
-  next.setHours(0, 0, 0, 0);
-  return next;
-}
+const defaultVenueTimezone = 'Africa/Cairo';
 
-function endOfDay(date = new Date()) {
-  const next = new Date(date);
-  next.setHours(23, 59, 59, 999);
-  return next;
-}
+function zonedParts(date: Date, timeZone: string) {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  const parts = Object.fromEntries(
+    formatter.formatToParts(date).map((part) => [part.type, part.value]),
+  );
 
-function startOfMonth(date = new Date()) {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
-}
-
-function endOfMonth(date = new Date()) {
-  return new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
-}
-
-function defaultRange(from?: Date, to?: Date) {
   return {
-    from: from ?? startOfMonth(),
-    to: to ?? endOfDay(),
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+    hour: Number(parts.hour),
+    minute: Number(parts.minute),
+    second: Number(parts.second),
+  };
+}
+
+function timeZoneOffsetMs(date: Date, timeZone: string) {
+  const parts = zonedParts(date, timeZone);
+  const asUtc = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second,
+    date.getUTCMilliseconds(),
+  );
+
+  return asUtc - date.getTime();
+}
+
+function zonedDateTimeToUtc(
+  timeZone: string,
+  year: number,
+  month: number,
+  day: number,
+  hour = 0,
+  minute = 0,
+  second = 0,
+  millisecond = 0,
+) {
+  let utcMs = Date.UTC(year, month - 1, day, hour, minute, second, millisecond);
+
+  for (let index = 0; index < 3; index += 1) {
+    utcMs = Date.UTC(year, month - 1, day, hour, minute, second, millisecond) -
+      timeZoneOffsetMs(new Date(utcMs), timeZone);
+  }
+
+  return new Date(utcMs);
+}
+
+function startOfDayInZone(timeZone: string, date = new Date()) {
+  const parts = zonedParts(date, timeZone);
+  return zonedDateTimeToUtc(timeZone, parts.year, parts.month, parts.day);
+}
+
+function endOfDayInZone(timeZone: string, date = new Date()) {
+  const parts = zonedParts(date, timeZone);
+  return zonedDateTimeToUtc(timeZone, parts.year, parts.month, parts.day, 23, 59, 59, 999);
+}
+
+function startOfMonthInZone(timeZone: string, date = new Date()) {
+  const parts = zonedParts(date, timeZone);
+  return zonedDateTimeToUtc(timeZone, parts.year, parts.month, 1);
+}
+
+function endOfMonthInZone(timeZone: string, date = new Date()) {
+  const parts = zonedParts(date, timeZone);
+  return zonedDateTimeToUtc(timeZone, parts.year, parts.month + 1, 0, 23, 59, 59, 999);
+}
+
+function defaultRange(timeZone: string, from?: Date, to?: Date) {
+  return {
+    from: from ?? startOfMonthInZone(timeZone),
+    to: to ?? endOfDayInZone(timeZone),
   };
 }
 
@@ -106,18 +168,29 @@ function summarizeTransactions(
   };
 }
 
-function monthKey(date: Date) {
-  return date.toISOString().slice(0, 7);
+function monthKey(date: Date, timeZone: string) {
+  const parts = zonedParts(date, timeZone);
+  return `${parts.year}-${String(parts.month).padStart(2, '0')}`;
 }
 
-function dayKey(date: Date) {
-  return date.toISOString().slice(0, 10);
+function dayKey(date: Date, timeZone: string) {
+  const parts = zonedParts(date, timeZone);
+  return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
 }
 
-function weekKey(date: Date) {
-  const first = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-  const days = Math.floor((date.getTime() - first.getTime()) / 86400000);
-  return `${date.getUTCFullYear()}-W${String(Math.ceil((days + first.getUTCDay() + 1) / 7)).padStart(2, '0')}`;
+function localDateTimeLabel(date: Date, timeZone: string) {
+  const parts = zonedParts(date, timeZone);
+  const pad = (value: number) => String(value).padStart(2, '0');
+
+  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)} ${pad(parts.hour)}:${pad(parts.minute)}:${pad(parts.second)}`;
+}
+
+function weekKey(date: Date, timeZone: string) {
+  const parts = zonedParts(date, timeZone);
+  const localDayAsUtc = Date.UTC(parts.year, parts.month - 1, parts.day);
+  const first = new Date(Date.UTC(parts.year, 0, 1));
+  const days = Math.floor((localDayAsUtc - first.getTime()) / 86400000);
+  return `${parts.year}-W${String(Math.ceil((days + first.getUTCDay() + 1) / 7)).padStart(2, '0')}`;
 }
 
 function jsonSnapshot(value: unknown) {
@@ -138,6 +211,15 @@ async function accessibleBranches(user: FinancialUser, branchId?: string) {
     orderBy: [{ isMain: 'desc' }, { createdAt: 'asc' }],
     select: { id: true, venueId: true, name: true, slug: true, isMain: true, active: true },
   });
+}
+
+async function venueTimezone(venueId: string) {
+  const venue = await prisma.venue.findUnique({
+    where: { id: venueId },
+    select: { timezone: true },
+  });
+
+  return venue?.timezone || defaultVenueTimezone;
 }
 
 function transactionWhere(
@@ -334,10 +416,12 @@ function insightMessages(
 export async function getFinanceAccess(session?: SessionPayload) {
   const user = await requireAccessUser(session);
   const allowance = await getFinanceAllowance(user.venueId);
+  const timeZone = await venueTimezone(user.venueId);
 
   return {
     allowance,
     isAdmin: user.isVenueAdmin,
+    timeZone,
   };
 }
 
@@ -347,7 +431,8 @@ export async function listFinancialTransactions(
 ) {
   const user = await requireAccessUser(session);
   await assertFinanceModuleAllowed(user.venueId);
-  const { from, to } = defaultRange(query.from, query.to);
+  const timeZone = await venueTimezone(user.venueId);
+  const { from, to } = defaultRange(timeZone, query.from, query.to);
   await assertFinanceRangeAllowed(user.venueId, from, to);
   const branches = await accessibleBranches(user, query.branchId);
   const branchIds = branches.map((branch) => branch.id);
@@ -739,15 +824,15 @@ export async function getFinancialDashboard(
   session: SessionPayload | undefined,
   query: z.infer<typeof financialDashboardQuerySchema>,
 ) {
-  console.log('getFinancialDashboard called with query:', query);
   const user = await requireAccessUser(session);
   const allowance = await assertFinanceModuleAllowed(user.venueId);
+  const timeZone = await venueTimezone(user.venueId);
   const branches = await accessibleBranches(user, query.branchId);
   const branchIds = branches.map((branch) => branch.id);
-  const todayStart = startOfDay();
-  const todayEnd = endOfDay();
-  const monthStartDate = startOfMonth();
-  const monthEndDate = endOfMonth();
+  const todayStart = startOfDayInZone(timeZone);
+  const todayEnd = endOfDayInZone(timeZone);
+  const monthStartDate = startOfMonthInZone(timeZone);
+  const monthEndDate = endOfMonthInZone(timeZone);
   const previousStart = new Date(
     monthStartDate.getTime() - (monthEndDate.getTime() - monthStartDate.getTime()),
   );
@@ -809,7 +894,8 @@ export async function getFinancialAnalytics(
   query: z.infer<typeof financialAnalyticsQuerySchema>,
 ) {
   const user = await requireAccessUser(session);
-  const { from, to } = defaultRange(query.from, query.to);
+  const timeZone = await venueTimezone(user.venueId);
+  const { from, to } = defaultRange(timeZone, query.from, query.to);
   const allowance = await assertFinanceRangeAllowed(user.venueId, from, to);
   const branches = await accessibleBranches(user, query.branchId);
   const branchIds = branches.map((branch) => branch.id);
@@ -826,16 +912,16 @@ export async function getFinancialAnalytics(
   for (const transaction of transactions) {
     const key =
       query.groupBy === 'month'
-        ? monthKey(transaction.occurredAt)
+        ? monthKey(transaction.occurredAt, timeZone)
         : query.groupBy === 'week'
-          ? weekKey(transaction.occurredAt)
+          ? weekKey(transaction.occurredAt, timeZone)
           : query.groupBy === 'branch'
             ? transaction.branchId
             : query.groupBy === 'category'
               ? transaction.categoryId
               : query.groupBy === 'paymentMethod'
                 ? (transaction.paymentMethodId ?? 'none')
-                : dayKey(transaction.occurredAt);
+                : dayKey(transaction.occurredAt, timeZone);
     const label =
       query.groupBy === 'branch'
         ? transaction.branch.name
@@ -871,7 +957,8 @@ export async function getFinancialReport(
   query: z.infer<typeof financialReportQuerySchema>,
 ) {
   const user = await requireAccessUser(session);
-  const { from, to } = defaultRange(query.from, query.to);
+  const timeZone = await venueTimezone(user.venueId);
+  const { from, to } = defaultRange(timeZone, query.from, query.to);
   const allowance = await assertFinanceRangeAllowed(user.venueId, from, to);
   const branches = await accessibleBranches(user, query.branchId);
   const branchIds = branches.map((branch) => branch.id);
@@ -990,7 +1077,8 @@ export async function getFinancialReportCsv(
   query: z.infer<typeof financialReportQuerySchema>,
 ) {
   const user = await requireAccessUser(session);
-  const { from, to } = defaultRange(query.from, query.to);
+  const timeZone = await venueTimezone(user.venueId);
+  const { from, to } = defaultRange(timeZone, query.from, query.to);
   await assertFinanceRangeAllowed(user.venueId, from, to);
   const branches = await accessibleBranches(user, query.branchId);
   const branchIds = branches.map((branch) => branch.id);
@@ -1005,7 +1093,7 @@ export async function getFinancialReportCsv(
       .join(','),
     ...transactions.map((transaction) =>
       [
-        transaction.occurredAt.toISOString(),
+        localDateTimeLabel(transaction.occurredAt, timeZone),
         localizedCell(transaction.branch.name),
         transaction.type,
         localizedCell(transaction.category.name),
@@ -1020,7 +1108,7 @@ export async function getFinancialReportCsv(
   ];
 
   return {
-    filename: `wasla-financial-report-${dayKey(from)}-${dayKey(to)}-${randomUUID().slice(0, 8)}.csv`,
+    filename: `wasla-financial-report-${dayKey(from, timeZone)}-${dayKey(to, timeZone)}-${randomUUID().slice(0, 8)}.csv`,
     csv: lines.join('\n'),
   };
 }
