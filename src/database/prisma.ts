@@ -7,14 +7,9 @@ const adapter = new PrismaPg({ connectionString: env.DATABASE_URL });
 export const prisma = new PrismaClient({
   adapter,
   log: [
-    { emit: 'event', level: 'query' },
     { emit: 'event', level: 'error' },
     { emit: 'event', level: 'warn' },
   ],
-});
-
-prisma.$on('query', (_event) => {
-  // console.log(`[db] ${event.duration}ms ${event.query}`);
 });
 
 prisma.$on('error', (event) => {

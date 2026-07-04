@@ -36,6 +36,42 @@ function plainLimit(value: number | null | undefined) {
   return isUnlimited(value) ? null : (value ?? 0);
 }
 
+function monthsAgo(months: number) {
+  const date = new Date();
+  date.setMonth(date.getMonth() - months);
+  return date;
+}
+
+function daysAgo(days: number) {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+}
+
+function clampRange(from: Date, to: Date, allowedFrom: Date, allowedTo: Date) {
+  const fromDate = from instanceof Date ? from : new Date(from);
+  const toDate = to instanceof Date ? to : new Date(to);
+
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+    throw new HttpError(400, 'errors.invalidDateRange');
+  }
+
+  if (toDate.getTime() < fromDate.getTime()) {
+    throw new HttpError(400, 'errors.invalidDateRange');
+  }
+
+  if (toDate.getTime() < allowedFrom.getTime() || fromDate.getTime() > allowedTo.getTime()) {
+    throw new HttpError(403, 'errors.dateRangeOutsideAllowedWindow', {
+      allowedFrom,
+      allowedTo,
+    });
+  }
+
+  return {
+    from: fromDate.getTime() < allowedFrom.getTime() ? allowedFrom : fromDate,
+    to: toDate.getTime() > allowedTo.getTime() ? allowedTo : toDate,
+    clamped: fromDate.getTime() < allowedFrom.getTime() || toDate.getTime() > allowedTo.getTime(),
+  };
+}
+
 export function subscriptionAllowsMutations(status: SubscriptionStatus) {
   return mutablePlanStatuses.includes(status);
 }
@@ -192,6 +228,31 @@ export async function assertAnalyticsAllowed(venueId: string, days: number, adva
   return context;
 }
 
+export async function assertAnalyticsRangeAllowed(
+  venueId: string,
+  from: Date,
+  to: Date,
+  advanced: boolean,
+) {
+  const context = await getVenuePlanContext(venueId);
+  if (advanced && !context.advancedAnalytics) {
+    throw new HttpError(403, 'errors.advancedAnalyticsRequired');
+  }
+
+  const allowedTo = new Date();
+  const allowedFrom = isUnlimited(context.analyticsHistoryDays)
+    ? new Date(0)
+    : daysAgo(context.analyticsHistoryDays);
+  const range = clampRange(from, to, allowedFrom, allowedTo);
+
+  return {
+    context,
+    allowedFrom,
+    allowedTo,
+    ...range,
+  };
+}
+
 export async function assertQrAssetAllowed(venueId: string, customAsset = false) {
   const context = await assertVenueCanMutate(venueId);
 
@@ -209,6 +270,8 @@ export async function getFinanceAllowance(venueId: string) {
     context.status !== SubscriptionStatus.CANCELED &&
     context.status !== SubscriptionStatus.EXPIRED;
   const historyMonths = context.financeAdvancedAnalytics ? 12 : 3;
+  const allowedFrom = monthsAgo(historyMonths);
+  const allowedTo = new Date();
 
   return {
     plan: context.plan,
@@ -216,6 +279,8 @@ export async function getFinanceAllowance(venueId: string) {
     canUseFinance,
     canUseAdvancedFinanceAnalytics: context.financeAdvancedAnalytics,
     historyMonths,
+    allowedFrom,
+    allowedTo,
   };
 }
 
@@ -238,20 +303,13 @@ export async function assertFinanceMutationAllowed(venueId: string) {
 
 export async function assertFinanceRangeAllowed(venueId: string, from: Date, to: Date) {
   const allowance = await assertFinanceModuleAllowed(venueId);
-  const maxMs = allowance.historyMonths * 31 * 24 * 60 * 60 * 1000;
+  const range = clampRange(from, to, allowance.allowedFrom, allowance.allowedTo);
 
-  if (to.getTime() < from.getTime()) {
-    throw new HttpError(400, 'errors.invalidDateRange');
-  }
-
-  if (to.getTime() - from.getTime() > maxMs) {
-    throw new HttpError(403, 'errors.financeRangeLimit', {
-      months: allowance.historyMonths,
-      feature: allowance.canUseAdvancedFinanceAnalytics
-        ? planGuardFeatures.financeAdvancedAnalytics
-        : planGuardFeatures.financeModule,
-    });
-  }
-
-  return allowance;
+  return {
+    ...allowance,
+    ...range,
+    feature: allowance.canUseAdvancedFinanceAnalytics
+      ? planGuardFeatures.financeAdvancedAnalytics
+      : planGuardFeatures.financeModule,
+  };
 }

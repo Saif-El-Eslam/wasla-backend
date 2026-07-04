@@ -11,6 +11,17 @@ import { HttpError } from '../../common/http/http-error';
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
 import { buildPaginationMeta } from '../../common/pagination/pagination';
 import {
+  dayKey,
+  endOfDayInZone,
+  endOfMonthInZone,
+  localDateTimeLabel,
+  monthKey,
+  startOfDayInZone,
+  startOfMonthInZone,
+  weekKey,
+} from '../../common/timezone';
+import { venueTimezone } from '../../common/venue-timezone';
+import {
   assertFinanceModuleAllowed,
   assertFinanceMutationAllowed,
   assertFinanceRangeAllowed,
@@ -39,88 +50,6 @@ const transactionInclude = Prisma.validator<Prisma.FinancialTransactionInclude>(
 });
 
 type FinancialUser = Awaited<ReturnType<typeof requireAccessUser>>;
-
-const defaultVenueTimezone = 'Africa/Cairo';
-
-function zonedParts(date: Date, timeZone: string) {
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    hourCycle: 'h23',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-  const parts = Object.fromEntries(
-    formatter.formatToParts(date).map((part) => [part.type, part.value]),
-  );
-
-  return {
-    year: Number(parts.year),
-    month: Number(parts.month),
-    day: Number(parts.day),
-    hour: Number(parts.hour),
-    minute: Number(parts.minute),
-    second: Number(parts.second),
-  };
-}
-
-function timeZoneOffsetMs(date: Date, timeZone: string) {
-  const parts = zonedParts(date, timeZone);
-  const asUtc = Date.UTC(
-    parts.year,
-    parts.month - 1,
-    parts.day,
-    parts.hour,
-    parts.minute,
-    parts.second,
-    date.getUTCMilliseconds(),
-  );
-
-  return asUtc - date.getTime();
-}
-
-function zonedDateTimeToUtc(
-  timeZone: string,
-  year: number,
-  month: number,
-  day: number,
-  hour = 0,
-  minute = 0,
-  second = 0,
-  millisecond = 0,
-) {
-  let utcMs = Date.UTC(year, month - 1, day, hour, minute, second, millisecond);
-
-  for (let index = 0; index < 3; index += 1) {
-    utcMs = Date.UTC(year, month - 1, day, hour, minute, second, millisecond) -
-      timeZoneOffsetMs(new Date(utcMs), timeZone);
-  }
-
-  return new Date(utcMs);
-}
-
-function startOfDayInZone(timeZone: string, date = new Date()) {
-  const parts = zonedParts(date, timeZone);
-  return zonedDateTimeToUtc(timeZone, parts.year, parts.month, parts.day);
-}
-
-function endOfDayInZone(timeZone: string, date = new Date()) {
-  const parts = zonedParts(date, timeZone);
-  return zonedDateTimeToUtc(timeZone, parts.year, parts.month, parts.day, 23, 59, 59, 999);
-}
-
-function startOfMonthInZone(timeZone: string, date = new Date()) {
-  const parts = zonedParts(date, timeZone);
-  return zonedDateTimeToUtc(timeZone, parts.year, parts.month, 1);
-}
-
-function endOfMonthInZone(timeZone: string, date = new Date()) {
-  const parts = zonedParts(date, timeZone);
-  return zonedDateTimeToUtc(timeZone, parts.year, parts.month + 1, 0, 23, 59, 59, 999);
-}
 
 function defaultRange(timeZone: string, from?: Date, to?: Date) {
   return {
@@ -168,31 +97,6 @@ function summarizeTransactions(
   };
 }
 
-function monthKey(date: Date, timeZone: string) {
-  const parts = zonedParts(date, timeZone);
-  return `${parts.year}-${String(parts.month).padStart(2, '0')}`;
-}
-
-function dayKey(date: Date, timeZone: string) {
-  const parts = zonedParts(date, timeZone);
-  return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
-}
-
-function localDateTimeLabel(date: Date, timeZone: string) {
-  const parts = zonedParts(date, timeZone);
-  const pad = (value: number) => String(value).padStart(2, '0');
-
-  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)} ${pad(parts.hour)}:${pad(parts.minute)}:${pad(parts.second)}`;
-}
-
-function weekKey(date: Date, timeZone: string) {
-  const parts = zonedParts(date, timeZone);
-  const localDayAsUtc = Date.UTC(parts.year, parts.month - 1, parts.day);
-  const first = new Date(Date.UTC(parts.year, 0, 1));
-  const days = Math.floor((localDayAsUtc - first.getTime()) / 86400000);
-  return `${parts.year}-W${String(Math.ceil((days + first.getUTCDay() + 1) / 7)).padStart(2, '0')}`;
-}
-
 function jsonSnapshot(value: unknown) {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 }
@@ -211,15 +115,6 @@ async function accessibleBranches(user: FinancialUser, branchId?: string) {
     orderBy: [{ isMain: 'desc' }, { createdAt: 'asc' }],
     select: { id: true, venueId: true, name: true, slug: true, isMain: true, active: true },
   });
-}
-
-async function venueTimezone(venueId: string) {
-  const venue = await prisma.venue.findUnique({
-    where: { id: venueId },
-    select: { timezone: true },
-  });
-
-  return venue?.timezone || defaultVenueTimezone;
 }
 
 function transactionWhere(
@@ -432,8 +327,13 @@ export async function listFinancialTransactions(
   const user = await requireAccessUser(session);
   await assertFinanceModuleAllowed(user.venueId);
   const timeZone = await venueTimezone(user.venueId);
-  const { from, to } = defaultRange(timeZone, query.from, query.to);
-  await assertFinanceRangeAllowed(user.venueId, from, to);
+  const defaultedRange = defaultRange(timeZone, query.from, query.to);
+  const range = await assertFinanceRangeAllowed(
+    user.venueId,
+    defaultedRange.from,
+    defaultedRange.to,
+  );
+  const { from, to } = range;
   const branches = await accessibleBranches(user, query.branchId);
   const branchIds = branches.map((branch) => branch.id);
   const where = transactionWhere(user, branchIds, { ...query, from, to });
@@ -486,8 +386,12 @@ export async function createFinancialTransaction(
     throw new HttpError(400, 'errors.invalidFinancialBranch');
   }
 
-  if (input.occurredAt.getTime() > Date.now() + 366 * 24 * 60 * 60 * 1000) {
+  if (input.occurredAt.getTime() > Date.now()) {
     throw new HttpError(400, 'errors.invalidTransactionDate');
+  }
+
+  if (input.occurredAt.getTime() < Date.now() - 1000 * 60 * 60 * 24 * 7) {
+    throw new HttpError(400, 'errors.oldTransactionDate');
   }
 
   const transaction = await prisma.$transaction(async (tx) => {
@@ -543,6 +447,10 @@ export async function updateFinancialTransaction(
 
   if (branch.venueId !== user.venueId) {
     throw new HttpError(400, 'errors.invalidFinancialBranch');
+  }
+
+  if (input.occurredAt && input.occurredAt.getTime() > Date.now()) {
+    throw new HttpError(400, 'errors.invalidTransactionDate');
   }
 
   const updated = await prisma.$transaction(async (tx) => {
@@ -895,8 +803,14 @@ export async function getFinancialAnalytics(
 ) {
   const user = await requireAccessUser(session);
   const timeZone = await venueTimezone(user.venueId);
-  const { from, to } = defaultRange(timeZone, query.from, query.to);
-  const allowance = await assertFinanceRangeAllowed(user.venueId, from, to);
+  const defaultedRange = defaultRange(timeZone, query.from, query.to);
+  const range = await assertFinanceRangeAllowed(
+    user.venueId,
+    defaultedRange.from,
+    defaultedRange.to,
+  );
+  const { from, to } = range;
+  const allowance = range;
   const branches = await accessibleBranches(user, query.branchId);
   const branchIds = branches.map((branch) => branch.id);
   const transactions = await prisma.financialTransaction.findMany({
@@ -958,8 +872,14 @@ export async function getFinancialReport(
 ) {
   const user = await requireAccessUser(session);
   const timeZone = await venueTimezone(user.venueId);
-  const { from, to } = defaultRange(timeZone, query.from, query.to);
-  const allowance = await assertFinanceRangeAllowed(user.venueId, from, to);
+  const defaultedRange = defaultRange(timeZone, query.from, query.to);
+  const range = await assertFinanceRangeAllowed(
+    user.venueId,
+    defaultedRange.from,
+    defaultedRange.to,
+  );
+  const { from, to } = range;
+  const allowance = range;
   const branches = await accessibleBranches(user, query.branchId);
   const branchIds = branches.map((branch) => branch.id);
   const transactions = await prisma.financialTransaction.findMany({
@@ -1078,8 +998,13 @@ export async function getFinancialReportCsv(
 ) {
   const user = await requireAccessUser(session);
   const timeZone = await venueTimezone(user.venueId);
-  const { from, to } = defaultRange(timeZone, query.from, query.to);
-  await assertFinanceRangeAllowed(user.venueId, from, to);
+  const defaultedRange = defaultRange(timeZone, query.from, query.to);
+  const range = await assertFinanceRangeAllowed(
+    user.venueId,
+    defaultedRange.from,
+    defaultedRange.to,
+  );
+  const { from, to } = range;
   const branches = await accessibleBranches(user, query.branchId);
   const branchIds = branches.map((branch) => branch.id);
   const transactions = await prisma.financialTransaction.findMany({

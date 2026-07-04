@@ -11,7 +11,7 @@ export const errorMiddleware: ErrorRequestHandler = (error, req, res, _next) => 
       ? (req.t?.('errors.validationFailed') ?? 'Validation failed')
       : error instanceof HttpError
         ? (req.t?.(error.messageKey, error.interpolation) ?? error.messageKey)
-        : req.t?.('errors.internal') ?? 'Internal server error';
+        : (req.t?.('errors.internal') ?? 'Internal server error');
 
   res.status(statusCode).json({
     success: false,

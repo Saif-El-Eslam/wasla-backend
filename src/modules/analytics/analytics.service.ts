@@ -1,8 +1,14 @@
 import { AnalyticsEventType } from '@prisma/client';
 import { prisma } from '../../database/prisma';
-import { branchScopeWhere, requireAccessUser, requireBranchAccess } from '../../common/auth/branch-access';
+import {
+  branchScopeWhere,
+  requireAccessUser,
+  requireBranchAccess,
+} from '../../common/auth/branch-access';
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
-import { assertAnalyticsAllowed } from '../subscription/plan-guards';
+import { dayKey } from '../../common/timezone';
+import { venueTimezone } from '../../common/venue-timezone';
+import { assertAnalyticsAllowed, assertAnalyticsRangeAllowed } from '../subscription/plan-guards';
 import type { z } from 'zod';
 import type { analyticsQuerySchema } from './analytics.schemas';
 
@@ -27,22 +33,45 @@ function percentChange(current: number, previous: number) {
   return Math.round(((current - previous) / previous) * 100);
 }
 
-function dayKey(date: Date) {
-  return date.toISOString().slice(0, 10);
-}
-
 export async function getAnalyticsSummary(
   session: SessionPayload | undefined,
   query: z.infer<typeof analyticsQuerySchema>,
   options: { advanced?: boolean } = {},
 ) {
   const user = await requireAccessUser(session);
-  const days = query.period === 'all' ? 999999 : query.period === '90d' ? 90 : query.period === '30d' ? 30 : 7;
-  await assertAnalyticsAllowed(user.venueId, days, Boolean(options.advanced));
+  const timeZone = await venueTimezone(user.venueId);
   const now = new Date();
-  const effectiveDays = query.period === 'all' ? 3650 : days;
-  const currentStart = new Date(now.getTime() - effectiveDays * 24 * 60 * 60 * 1000);
-  const previousStart = new Date(now.getTime() - effectiveDays * 2 * 24 * 60 * 60 * 1000);
+  const periodDays =
+    query.period === 'all' ? 3650 : query.period === '90d' ? 90 : query.period === '30d' ? 30 : 7;
+  const requestedFrom = query.from ?? new Date(now.getTime() - periodDays * 24 * 60 * 60 * 1000);
+  const requestedTo = query.to ?? now;
+  console.log('requestedFrom', requestedFrom);
+  const range =
+    query.from || query.to
+      ? await assertAnalyticsRangeAllowed(
+          user.venueId,
+          requestedFrom,
+          requestedTo,
+          Boolean(options.advanced),
+        )
+      : await (async () => {
+          await assertAnalyticsAllowed(user.venueId, periodDays, Boolean(options.advanced));
+          return await assertAnalyticsRangeAllowed(
+            user.venueId,
+            requestedFrom,
+            requestedTo,
+            Boolean(options.advanced),
+          );
+        })();
+  console.log('Analytics Summary');
+
+  const currentStart = range.from;
+  const currentEnd = range.to;
+  const effectiveMs = Math.max(currentEnd.getTime() - currentStart.getTime(), 24 * 60 * 60 * 1000);
+  const effectiveDays = Math.max(1, Math.ceil(effectiveMs / (24 * 60 * 60 * 1000)));
+  const previousStart = new Date(currentStart.getTime() - effectiveMs);
+
+  console.log('Analytics Summary');
 
   const branches = query.branchId
     ? [(await requireBranchAccess(session, query.branchId)).branch]
@@ -65,7 +94,7 @@ export async function getAnalyticsSummary(
         where: {
           venueId: user.venueId,
           branchId: { in: branchIds },
-          createdAt: { gte: previousStart },
+          createdAt: { gte: previousStart, lte: currentEnd },
         },
         select: {
           eventType: true,
@@ -81,21 +110,31 @@ export async function getAnalyticsSummary(
   const metrics = Object.fromEntries(
     (Object.keys(metricEventMap) as MetricKey[]).map((key) => {
       const eventType = metricEventMap[key];
-      const current = events.filter((event) => event.eventType === eventType && event.createdAt >= currentStart).length;
-      const previous = events.filter((event) => event.eventType === eventType && event.createdAt < currentStart).length;
+      const current = events.filter(
+        (event) =>
+          event.eventType === eventType &&
+          event.createdAt >= currentStart &&
+          event.createdAt <= currentEnd,
+      ).length;
+      const previous = events.filter(
+        (event) => event.eventType === eventType && event.createdAt < currentStart,
+      ).length;
 
       return [key, { current, previous, change: percentChange(current, previous) }];
     }),
   ) as Record<MetricKey, { current: number; previous: number; change: number }>;
 
   const series = Array.from({ length: Math.min(effectiveDays, 14) }, (_, index) => {
-    const date = new Date(now);
-    date.setDate(now.getDate() - (Math.min(effectiveDays, 14) - index - 1));
-    const key = dayKey(date);
-    const dayEvents = events.filter((event) => dayKey(event.createdAt) === key);
+    const date = new Date(currentEnd);
+    date.setDate(currentEnd.getDate() - (Math.min(effectiveDays, 14) - index - 1));
+    const key = dayKey(date, timeZone);
+    const dayEvents = events.filter((event) => dayKey(event.createdAt, timeZone) === key);
 
     return {
-      label: query.period === '7d' ? date.toLocaleDateString('en', { weekday: 'short' }) : key.slice(5),
+      label:
+        query.period === '7d' && !query.from && !query.to
+          ? date.toLocaleDateString('en', { weekday: 'short', timeZone })
+          : key.slice(5),
       views: dayEvents.filter((event) => event.eventType === AnalyticsEventType.MENU_VIEW).length,
       scans: dayEvents.filter((event) => event.eventType === AnalyticsEventType.QR_SCAN).length,
     };
@@ -105,11 +144,22 @@ export async function getAnalyticsSummary(
     branchId: branch.id,
     name: branch.name,
     slug: branch.slug,
-    value: events.filter((event) => event.branchId === branch.id && event.createdAt >= currentStart).length,
+    value: events.filter(
+      (event) =>
+        event.branchId === branch.id &&
+        event.createdAt >= currentStart &&
+        event.createdAt <= currentEnd,
+    ).length,
   }));
 
   const itemViews = events
-    .filter((event) => event.itemId && event.eventType === AnalyticsEventType.ITEM_VIEW && event.createdAt >= currentStart)
+    .filter(
+      (event) =>
+        event.itemId &&
+        event.eventType === AnalyticsEventType.ITEM_VIEW &&
+        event.createdAt >= currentStart &&
+        event.createdAt <= currentEnd,
+    )
     .reduce<Record<string, { itemId: string; name: unknown; views: number }>>((acc, event) => {
       if (!event.itemId) {
         return acc;
@@ -121,8 +171,17 @@ export async function getAnalyticsSummary(
     }, {});
 
   return {
-    period: query.period,
+    period: query.from || query.to ? 'custom' : query.period,
     branchId: query.branchId ?? null,
+    filters: {
+      from: currentStart,
+      to: currentEnd,
+      clamped: range.clamped,
+    },
+    allowedRange: {
+      from: range.allowedFrom,
+      to: range.allowedTo,
+    },
     metrics,
     series,
     branchActivity,
