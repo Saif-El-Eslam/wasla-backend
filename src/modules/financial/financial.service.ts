@@ -1,8 +1,6 @@
 import { FinancialAuditAction, FinancialTransactionType, Prisma } from '@prisma/client';
-import { randomUUID } from 'node:crypto';
 import { prisma } from '../../database/prisma';
 import {
-  branchScopeWhere,
   requireAccessUser,
   requireBranchAccess,
   requireVenueAdmin,
@@ -11,14 +9,10 @@ import { HttpError } from '../../common/http/http-error';
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
 import { buildPaginationMeta } from '../../common/pagination/pagination';
 import {
-  dayKey,
   endOfDayInZone,
   endOfMonthInZone,
-  localDateTimeLabel,
-  monthKey,
   startOfDayInZone,
   startOfMonthInZone,
-  weekKey,
 } from '../../common/timezone';
 import { venueTimezone } from '../../common/venue-timezone';
 import {
@@ -42,110 +36,23 @@ import type {
   updatePaymentMethodSchema,
   updateTransactionCategorySchema,
 } from './financial.schemas';
-
-const transactionInclude = Prisma.validator<Prisma.FinancialTransactionInclude>()({
-  branch: { select: { id: true, name: true, slug: true, isMain: true, active: true } },
-  category: true,
-  paymentMethod: true,
-});
-
-type FinancialUser = Awaited<ReturnType<typeof requireAccessUser>>;
-
-function defaultRange(timeZone: string, from?: Date, to?: Date) {
-  return {
-    from: from ?? startOfMonthInZone(timeZone),
-    to: to ?? endOfDayInZone(timeZone),
-  };
-}
-
-function paginationFromQuery(
-  query: Pick<z.infer<typeof financialTransactionListQuerySchema>, 'page' | 'limit'>,
-) {
-  const page = Number.isFinite(Number(query.page))
-    ? Math.max(1, Math.trunc(Number(query.page)))
-    : 1;
-  const limit = Number.isFinite(Number(query.limit))
-    ? Math.min(100, Math.max(1, Math.trunc(Number(query.limit))))
-    : 20;
-
-  return {
-    page,
-    limit,
-    skip: (page - 1) * limit,
-  };
-}
-
-function decimalToNumber(value: Prisma.Decimal | number | string | null | undefined) {
-  return value === null || value === undefined ? 0 : Number(value);
-}
-
-function summarizeTransactions(
-  transactions: Array<{ type: FinancialTransactionType; amount: Prisma.Decimal }>,
-) {
-  const income = transactions
-    .filter((transaction) => transaction.type === FinancialTransactionType.IN)
-    .reduce((sum, transaction) => sum + decimalToNumber(transaction.amount), 0);
-  const expenses = transactions
-    .filter((transaction) => transaction.type === FinancialTransactionType.OUT)
-    .reduce((sum, transaction) => sum + decimalToNumber(transaction.amount), 0);
-
-  return {
-    income,
-    expenses,
-    net: income - expenses,
-    count: transactions.length,
-  };
-}
+import {
+  buildFinancialAnalyticsGroups,
+  buildFinancialReportCsv,
+  buildFinancialReportSummary,
+} from './financial-report-builders';
+import {
+  accessibleBranches,
+  defaultRange,
+  paginationFromQuery,
+  summarizeTransactionGroups,
+  transactionInclude,
+  transactionSummaryQuery,
+  transactionWhere,
+} from './financial-query';
 
 function jsonSnapshot(value: unknown) {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
-}
-
-async function accessibleBranches(user: FinancialUser, branchId?: string) {
-  if (branchId && branchId !== 'all') {
-    const { branch } = await requireBranchAccess(
-      { sub: user.id, venueId: user.venueId, role: user.role },
-      branchId,
-    );
-    return [branch];
-  }
-
-  return prisma.branch.findMany({
-    where: branchScopeWhere(user),
-    orderBy: [{ isMain: 'desc' }, { createdAt: 'asc' }],
-    select: { id: true, venueId: true, name: true, slug: true, isMain: true, active: true },
-  });
-}
-
-function transactionWhere(
-  user: FinancialUser,
-  branchIds: string[],
-  filters: {
-    from?: Date;
-    to?: Date;
-    type?: FinancialTransactionType;
-    categoryId?: string;
-    paymentMethodId?: string;
-    search?: string;
-  } = {},
-): Prisma.FinancialTransactionWhereInput {
-  return {
-    venueId: user.venueId,
-    branchId: { in: branchIds },
-    deletedAt: null,
-    ...(filters.from || filters.to
-      ? {
-          occurredAt: {
-            gte: filters.from,
-            lte: filters.to,
-          },
-        }
-      : {}),
-    ...(filters.type ? { type: filters.type } : {}),
-    ...(filters.categoryId ? { categoryId: filters.categoryId } : {}),
-    ...(filters.paymentMethodId ? { paymentMethodId: filters.paymentMethodId } : {}),
-    ...(filters.search ? { note: { contains: filters.search, mode: 'insensitive' } } : {}),
-  };
 }
 
 async function requireCategoryForTransaction(
@@ -524,6 +431,7 @@ export async function listTransactionCategories(
 ) {
   const user = await requireAccessUser(session);
   await assertFinanceModuleAllowed(user.venueId);
+
   const categories = await prisma.transactionCategory.findMany({
     where: {
       venueId: user.venueId,
@@ -745,55 +653,54 @@ export async function getFinancialDashboard(
     monthStartDate.getTime() - (monthEndDate.getTime() - monthStartDate.getTime()),
   );
   const previousEnd = new Date(monthStartDate.getTime() - 1);
-  const [todayTransactions, monthTransactions, previousTransactions, recentTransactions] =
-    await prisma.$transaction([
-      prisma.financialTransaction.findMany({
-        where: transactionWhere(user, branchIds, {
-          from: todayStart,
-          to: todayEnd,
-          type: query.type,
-          categoryId: query.categoryId,
-          paymentMethodId: query.paymentMethodId,
-        }),
+  const [todayGroups, monthGroups, previousGroups, recentTransactions] = await prisma.$transaction([
+    transactionSummaryQuery(
+      transactionWhere(user, branchIds, {
+        from: todayStart,
+        to: todayEnd,
+        type: query.type,
+        categoryId: query.categoryId,
+        paymentMethodId: query.paymentMethodId,
       }),
-      prisma.financialTransaction.findMany({
-        where: transactionWhere(user, branchIds, {
-          from: monthStartDate,
-          to: monthEndDate,
-          type: query.type,
-          categoryId: query.categoryId,
-          paymentMethodId: query.paymentMethodId,
-        }),
+    ),
+    transactionSummaryQuery(
+      transactionWhere(user, branchIds, {
+        from: monthStartDate,
+        to: monthEndDate,
+        type: query.type,
+        categoryId: query.categoryId,
+        paymentMethodId: query.paymentMethodId,
       }),
-      prisma.financialTransaction.findMany({
-        where: transactionWhere(user, branchIds, {
-          from: previousStart,
-          to: previousEnd,
-          type: query.type,
-          categoryId: query.categoryId,
-          paymentMethodId: query.paymentMethodId,
-        }),
+    ),
+    transactionSummaryQuery(
+      transactionWhere(user, branchIds, {
+        from: previousStart,
+        to: previousEnd,
+        type: query.type,
+        categoryId: query.categoryId,
+        paymentMethodId: query.paymentMethodId,
       }),
-      prisma.financialTransaction.findMany({
-        where: transactionWhere(user, branchIds, {
-          type: query.type,
-          categoryId: query.categoryId,
-          paymentMethodId: query.paymentMethodId,
-        }),
-        include: transactionInclude,
-        orderBy: [{ occurredAt: 'desc' }, { createdAt: 'desc' }],
-        take: 8,
+    ),
+    prisma.financialTransaction.findMany({
+      where: transactionWhere(user, branchIds, {
+        type: query.type,
+        categoryId: query.categoryId,
+        paymentMethodId: query.paymentMethodId,
       }),
-    ]);
-  const monthSummary = summarizeTransactions(monthTransactions);
+      include: transactionInclude,
+      orderBy: [{ occurredAt: 'desc' }, { createdAt: 'desc' }],
+      take: 8,
+    }),
+  ]);
+  const monthSummary = summarizeTransactionGroups(monthGroups);
 
   return {
     allowance,
     branches,
-    today: summarizeTransactions(todayTransactions),
+    today: summarizeTransactionGroups(todayGroups),
     month: monthSummary,
     recentTransactions,
-    insights: insightMessages(monthSummary, summarizeTransactions(previousTransactions)),
+    insights: insightMessages(monthSummary, summarizeTransactionGroups(previousGroups)),
   };
 }
 
@@ -818,51 +725,16 @@ export async function getFinancialAnalytics(
     include: transactionInclude,
     orderBy: { occurredAt: 'asc' },
   });
-  const groups = new Map<
-    string,
-    { key: string; label: unknown; income: number; expenses: number; net: number; count: number }
-  >();
-
-  for (const transaction of transactions) {
-    const key =
-      query.groupBy === 'month'
-        ? monthKey(transaction.occurredAt, timeZone)
-        : query.groupBy === 'week'
-          ? weekKey(transaction.occurredAt, timeZone)
-          : query.groupBy === 'branch'
-            ? transaction.branchId
-            : query.groupBy === 'category'
-              ? transaction.categoryId
-              : query.groupBy === 'paymentMethod'
-                ? (transaction.paymentMethodId ?? 'none')
-                : dayKey(transaction.occurredAt, timeZone);
-    const label =
-      query.groupBy === 'branch'
-        ? transaction.branch.name
-        : query.groupBy === 'category'
-          ? transaction.category.name
-          : query.groupBy === 'paymentMethod'
-            ? (transaction.paymentMethod?.name ?? { en: 'No payment method', ar: 'بدون طريقة دفع' })
-            : key;
-    const current = groups.get(key) ?? { key, label, income: 0, expenses: 0, net: 0, count: 0 };
-    const amount = decimalToNumber(transaction.amount);
-
-    if (transaction.type === FinancialTransactionType.IN) {
-      current.income += amount;
-    } else {
-      current.expenses += amount;
-    }
-
-    current.net = current.income - current.expenses;
-    current.count += 1;
-    groups.set(key, current);
-  }
+  const analytics = buildFinancialAnalyticsGroups({
+    transactions,
+    groupBy: query.groupBy,
+    timeZone,
+  });
 
   return {
     allowance,
     filters: { ...query, from, to },
-    summary: summarizeTransactions(transactions),
-    groups: Array.from(groups.values()),
+    ...analytics,
   };
 }
 
@@ -887,109 +759,13 @@ export async function getFinancialReport(
     include: transactionInclude,
     orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
   });
-  const byCategory = new Map<
-    string,
-    {
-      categoryId: string;
-      name: unknown;
-      type: FinancialTransactionType;
-      amount: number;
-      count: number;
-    }
-  >();
-  const byBranch = new Map<
-    string,
-    {
-      branchId: string;
-      name: unknown;
-      income: number;
-      expenses: number;
-      net: number;
-      count: number;
-    }
-  >();
-  const byPaymentMethod = new Map<
-    string,
-    {
-      paymentMethodId: string | null;
-      name: unknown;
-      income: number;
-      expenses: number;
-      net: number;
-      count: number;
-    }
-  >();
-
-  for (const transaction of transactions) {
-    const amount = decimalToNumber(transaction.amount);
-    const category = byCategory.get(transaction.categoryId) ?? {
-      categoryId: transaction.categoryId,
-      name: transaction.category.name,
-      type: transaction.type,
-      amount: 0,
-      count: 0,
-    };
-    category.amount += amount;
-    category.count += 1;
-    byCategory.set(transaction.categoryId, category);
-
-    const branch = byBranch.get(transaction.branchId) ?? {
-      branchId: transaction.branchId,
-      name: transaction.branch.name,
-      income: 0,
-      expenses: 0,
-      net: 0,
-      count: 0,
-    };
-    const methodKey = transaction.paymentMethodId ?? 'none';
-    const method = byPaymentMethod.get(methodKey) ?? {
-      paymentMethodId: transaction.paymentMethodId,
-      name: transaction.paymentMethod?.name ?? { en: 'No payment method', ar: 'بدون طريقة دفع' },
-      income: 0,
-      expenses: 0,
-      net: 0,
-      count: 0,
-    };
-
-    if (transaction.type === FinancialTransactionType.IN) {
-      branch.income += amount;
-      method.income += amount;
-    } else {
-      branch.expenses += amount;
-      method.expenses += amount;
-    }
-
-    branch.net = branch.income - branch.expenses;
-    branch.count += 1;
-    method.net = method.income - method.expenses;
-    method.count += 1;
-    byBranch.set(transaction.branchId, branch);
-    byPaymentMethod.set(methodKey, method);
-  }
+  const report = buildFinancialReportSummary(transactions);
 
   return {
     allowance,
     filters: { ...query, from, to },
-    summary: summarizeTransactions(transactions),
-    byCategory: Array.from(byCategory.values()),
-    byBranch: Array.from(byBranch.values()),
-    byPaymentMethod: Array.from(byPaymentMethod.values()),
-    transactionCount: transactions.length,
+    ...report,
   };
-}
-
-function csvCell(value: unknown) {
-  const text = String(value ?? '');
-  return `"${text.replace(/"/g, '""')}"`;
-}
-
-function localizedCell(value: unknown) {
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    const record = value as Record<string, unknown>;
-    return String(record.en ?? record.ar ?? Object.values(record).find(Boolean) ?? '');
-  }
-
-  return String(value ?? '');
 }
 
 export async function getFinancialReportCsv(
@@ -1012,28 +788,6 @@ export async function getFinancialReportCsv(
     include: transactionInclude,
     orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
   });
-  const lines = [
-    ['Date', 'Branch', 'Type', 'Category', 'Payment Method', 'Amount', 'Currency', 'Note']
-      .map(csvCell)
-      .join(','),
-    ...transactions.map((transaction) =>
-      [
-        localDateTimeLabel(transaction.occurredAt, timeZone),
-        localizedCell(transaction.branch.name),
-        transaction.type,
-        localizedCell(transaction.category.name),
-        localizedCell(transaction.paymentMethod?.name),
-        decimalToNumber(transaction.amount).toFixed(2),
-        transaction.currency,
-        transaction.note ?? '',
-      ]
-        .map(csvCell)
-        .join(','),
-    ),
-  ];
 
-  return {
-    filename: `wasla-financial-report-${dayKey(from, timeZone)}-${dayKey(to, timeZone)}-${randomUUID().slice(0, 8)}.csv`,
-    csv: lines.join('\n'),
-  };
+  return buildFinancialReportCsv({ transactions, from, to, timeZone });
 }

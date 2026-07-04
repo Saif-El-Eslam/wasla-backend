@@ -4,6 +4,13 @@ import { localizedTextSchema } from '../../common/i18n/localized-text.schema';
 const transactionTypeSchema = z.enum(['IN', 'OUT']);
 const branchFilterSchema = z.string().uuid().or(z.literal('all')).default('all');
 const dateQuerySchema = z.coerce.date().optional();
+const queryBooleanSchema = z.preprocess((value) => {
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  return value.toLowerCase() === 'true';
+}, z.boolean());
 
 export const transactionParamsSchema = z.object({
   transactionId: z.string().uuid(),
@@ -59,7 +66,7 @@ export const updateTransactionCategorySchema = createTransactionCategorySchema.p
 
 export const categoryListQuerySchema = z.object({
   type: transactionTypeSchema.optional(),
-  includeInactive: z.coerce.boolean().default(false),
+  includeInactive: queryBooleanSchema.default(false),
 });
 
 export const createPaymentMethodSchema = z.object({
@@ -77,7 +84,7 @@ export const updatePaymentMethodSchema = createPaymentMethodSchema.partial().ref
 );
 
 export const paymentMethodListQuerySchema = z.object({
-  includeInactive: z.coerce.boolean().default(false),
+  includeInactive: queryBooleanSchema.default(false),
 });
 
 export const financialDashboardQuerySchema = z.object({

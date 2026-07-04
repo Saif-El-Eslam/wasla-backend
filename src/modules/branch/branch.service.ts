@@ -67,7 +67,9 @@ const branchStatsSelect = Prisma.validator<Prisma.BranchSelect>()({
       categories: {
         select: {
           id: true,
-          items: { select: { id: true } },
+          _count: {
+            select: { items: true },
+          },
         },
       },
     },
@@ -85,7 +87,7 @@ function statsForBranch(branch: BranchWithStats, analytics?: AnalyticsStats) {
 
   return {
     categories: branch.menu?.categories.length ?? 0,
-    items: branch.menu?.categories.reduce((sum, category) => sum + category.items.length, 0) ?? 0,
+    items: branch.menu?.categories.reduce((sum, category) => sum + category._count.items, 0) ?? 0,
     views: eventStats.views,
     scans: eventStats.scans,
     whatsapp: eventStats.whatsapp,

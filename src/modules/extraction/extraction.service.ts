@@ -302,11 +302,9 @@ export async function startExtractionJob(
   images: UploadedImage[],
 ) {
   const { user, branch } = await requireBranchAccess(session, branchId);
-  console.log('HERE');
   if (images.length === 0) {
     throw new HttpError(400, 'errors.extractionImagesRequired');
   }
-  console.log('HERE');
 
   await failStaleExtractionJobs({ venueId: user.venueId });
   await assertBranchMutationAllowed(user.venueId, branchId);
@@ -323,12 +321,10 @@ export async function startExtractionJob(
       imageCount: images.length,
     },
   });
-  console.log('HERE');
 
   void processExtractionJob(job.id, images).catch((error) => {
     console.error(`[extraction] Unhandled extraction job failure jobId=${job.id}`, error);
   });
-  console.log('HERE');
 
   return {
     job: compactJob(job),
