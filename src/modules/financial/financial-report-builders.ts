@@ -12,6 +12,9 @@ const noPaymentMethodName = {
   en: 'No payment method',
   ar: '\u0628\u062f\u0648\u0646 \u0637\u0631\u064a\u0642\u0629 \u062f\u0641\u0639',
 };
+const arabicTextPattern = /[\u0600-\u06FF]/;
+const rightToLeftMark = '\u200F';
+const csvLineBreak = '\r\n';
 
 function financialCsvLabels(locale: string) {
   if (locale === 'ar') {
@@ -189,6 +192,21 @@ function csvCell(value: unknown) {
   return `"${text.replace(/"/g, '""')}"`;
 }
 
+function csvDirectionCell(value: unknown, locale: string) {
+  if (typeof value !== 'string' || locale !== 'ar' || !arabicTextPattern.test(value)) {
+    return value;
+  }
+
+  return `${rightToLeftMark}${value}`;
+}
+
+function rowToCsv(row: unknown[], locale: string) {
+  const cells = row.map((cell) => csvDirectionCell(cell, locale));
+  const orderedCells = locale === 'ar' ? cells.reverse() : cells;
+
+  return orderedCells.map(csvCell).join(',');
+}
+
 function localizedCell(value: unknown, locale: string) {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     return resolveLocalizedText(value as Record<string, string>, {
@@ -209,36 +227,38 @@ export function buildFinancialReportCsv(input: {
 }) {
   const labels = financialCsvLabels(input.locale);
   const lines = [
-    [
-      labels.date,
-      labels.branch,
-      labels.type,
-      labels.category,
-      labels.paymentMethod,
-      labels.amount,
-      labels.currency,
-      labels.note,
-    ]
-      .map(csvCell)
-      .join(','),
-    ...input.transactions.map((transaction) =>
+    rowToCsv(
       [
-        localDateTimeLabel(transaction.occurredAt, input.timeZone),
-        localizedCell(transaction.branch.name, input.locale),
-        transaction.type === FinancialTransactionType.IN ? labels.income : labels.expense,
-        localizedCell(transaction.category.name, input.locale),
-        localizedCell(transaction.paymentMethod?.name ?? noPaymentMethodName, input.locale),
-        decimalToNumber(transaction.amount).toFixed(2),
-        transaction.currency,
-        transaction.note ?? '',
-      ]
-        .map(csvCell)
-        .join(','),
+        labels.date,
+        labels.branch,
+        labels.type,
+        labels.category,
+        labels.paymentMethod,
+        labels.amount,
+        labels.currency,
+        labels.note,
+      ],
+      input.locale,
+    ),
+    ...input.transactions.map((transaction) =>
+      rowToCsv(
+        [
+          localDateTimeLabel(transaction.occurredAt, input.timeZone),
+          localizedCell(transaction.branch.name, input.locale),
+          transaction.type === FinancialTransactionType.IN ? labels.income : labels.expense,
+          localizedCell(transaction.category.name, input.locale),
+          localizedCell(transaction.paymentMethod?.name ?? noPaymentMethodName, input.locale),
+          decimalToNumber(transaction.amount).toFixed(2),
+          transaction.currency,
+          transaction.note ?? '',
+        ],
+        input.locale,
+      ),
     ),
   ];
 
   return {
     filename: `wasla-financial-report-${dayKey(input.from, input.timeZone)}-${dayKey(input.to, input.timeZone)}-${randomUUID().slice(0, 8)}.csv`,
-    csv: `\uFEFF${lines.join('\n')}`,
+    csv: `\uFEFF${lines.join(csvLineBreak)}`,
   };
 }
