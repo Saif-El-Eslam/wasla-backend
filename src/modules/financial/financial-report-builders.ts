@@ -1,11 +1,47 @@
 import { FinancialTransactionType } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
+import { resolveLocalizedText } from '../../common/i18n/localized-text';
 import { dayKey, localDateTimeLabel, monthKey, weekKey } from '../../common/timezone';
 import {
   decimalToNumber,
   summarizeTransactions,
   type FinancialTransactionWithRelations,
 } from './financial-query';
+
+const noPaymentMethodName = {
+  en: 'No payment method',
+  ar: '\u0628\u062f\u0648\u0646 \u0637\u0631\u064a\u0642\u0629 \u062f\u0641\u0639',
+};
+
+function financialCsvLabels(locale: string) {
+  if (locale === 'ar') {
+    return {
+      amount: '\u0627\u0644\u0645\u0628\u0644\u063a',
+      branch: '\u0627\u0644\u0641\u0631\u0639',
+      category: '\u0627\u0644\u062a\u0635\u0646\u064a\u0641',
+      currency: '\u0627\u0644\u0639\u0645\u0644\u0629',
+      date: '\u0627\u0644\u062a\u0627\u0631\u064a\u062e',
+      expense: '\u0645\u0635\u0631\u0648\u0641',
+      income: '\u0625\u064a\u0631\u0627\u062f',
+      note: '\u0645\u0644\u0627\u062d\u0638\u0629',
+      paymentMethod: '\u0637\u0631\u064a\u0642\u0629 \u0627\u0644\u062f\u0641\u0639',
+      type: '\u0627\u0644\u0646\u0648\u0639',
+    };
+  }
+
+  return {
+    amount: 'Amount',
+    branch: 'Branch',
+    category: 'Category',
+    currency: 'Currency',
+    date: 'Date',
+    expense: 'Expense',
+    income: 'Income',
+    note: 'Note',
+    paymentMethod: 'Payment Method',
+    type: 'Type',
+  };
+}
 
 export function buildFinancialAnalyticsGroups(input: {
   transactions: FinancialTransactionWithRelations[];
@@ -36,7 +72,7 @@ export function buildFinancialAnalyticsGroups(input: {
         : input.groupBy === 'category'
           ? transaction.category.name
           : input.groupBy === 'paymentMethod'
-            ? (transaction.paymentMethod?.name ?? { en: 'No payment method', ar: 'بدون طريقة دفع' })
+            ? (transaction.paymentMethod?.name ?? noPaymentMethodName)
             : key;
     const current = groups.get(key) ?? { key, label, income: 0, expenses: 0, net: 0, count: 0 };
     const amount = decimalToNumber(transaction.amount);
@@ -116,7 +152,7 @@ export function buildFinancialReportSummary(transactions: FinancialTransactionWi
     const methodKey = transaction.paymentMethodId ?? 'none';
     const method = byPaymentMethod.get(methodKey) ?? {
       paymentMethodId: transaction.paymentMethodId,
-      name: transaction.paymentMethod?.name ?? { en: 'No payment method', ar: 'بدون طريقة دفع' },
+      name: transaction.paymentMethod?.name ?? noPaymentMethodName,
       income: 0,
       expenses: 0,
       net: 0,
@@ -153,10 +189,12 @@ function csvCell(value: unknown) {
   return `"${text.replace(/"/g, '""')}"`;
 }
 
-function localizedCell(value: unknown) {
+function localizedCell(value: unknown, locale: string) {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
-    const record = value as Record<string, unknown>;
-    return String(record.en ?? record.ar ?? Object.values(record).find(Boolean) ?? '');
+    return resolveLocalizedText(value as Record<string, string>, {
+      requestedLocale: locale,
+      defaultLocale: 'en',
+    });
   }
 
   return String(value ?? '');
@@ -167,18 +205,29 @@ export function buildFinancialReportCsv(input: {
   from: Date;
   to: Date;
   timeZone: string;
+  locale: string;
 }) {
+  const labels = financialCsvLabels(input.locale);
   const lines = [
-    ['Date', 'Branch', 'Type', 'Category', 'Payment Method', 'Amount', 'Currency', 'Note']
+    [
+      labels.date,
+      labels.branch,
+      labels.type,
+      labels.category,
+      labels.paymentMethod,
+      labels.amount,
+      labels.currency,
+      labels.note,
+    ]
       .map(csvCell)
       .join(','),
     ...input.transactions.map((transaction) =>
       [
         localDateTimeLabel(transaction.occurredAt, input.timeZone),
-        localizedCell(transaction.branch.name),
-        transaction.type,
-        localizedCell(transaction.category.name),
-        localizedCell(transaction.paymentMethod?.name),
+        localizedCell(transaction.branch.name, input.locale),
+        transaction.type === FinancialTransactionType.IN ? labels.income : labels.expense,
+        localizedCell(transaction.category.name, input.locale),
+        localizedCell(transaction.paymentMethod?.name ?? noPaymentMethodName, input.locale),
         decimalToNumber(transaction.amount).toFixed(2),
         transaction.currency,
         transaction.note ?? '',
@@ -190,6 +239,6 @@ export function buildFinancialReportCsv(input: {
 
   return {
     filename: `wasla-financial-report-${dayKey(input.from, input.timeZone)}-${dayKey(input.to, input.timeZone)}-${randomUUID().slice(0, 8)}.csv`,
-    csv: lines.join('\n'),
+    csv: `\uFEFF${lines.join('\n')}`,
   };
 }

@@ -771,6 +771,7 @@ export async function getFinancialReport(
 export async function getFinancialReportCsv(
   session: SessionPayload | undefined,
   query: z.infer<typeof financialReportQuerySchema>,
+  locale = 'en',
 ) {
   const user = await requireAccessUser(session);
   const timeZone = await venueTimezone(user.venueId);
@@ -789,5 +790,5 @@ export async function getFinancialReportCsv(
     orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
   });
 
-  return buildFinancialReportCsv({ transactions, from, to, timeZone });
+  return buildFinancialReportCsv({ transactions, from, to, timeZone, locale });
 }

@@ -159,7 +159,7 @@ export const getFinancialReportController = asyncHandler(async (req, res) => {
 });
 
 export const getFinancialReportCsvController = asyncHandler(async (req, res) => {
-  const report = await getFinancialReportCsv(req.user, req.validated?.query as never);
+  const report = await getFinancialReportCsv(req.user, req.validated?.query as never, req.locale);
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="${report.filename}"`);
   res.status(200).send(report.csv);
