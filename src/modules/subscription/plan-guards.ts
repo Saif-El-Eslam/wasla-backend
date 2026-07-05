@@ -36,14 +36,17 @@ function plainLimit(value: number | null | undefined) {
   return isUnlimited(value) ? null : (value ?? 0);
 }
 
-function monthsAgo(months: number) {
-  const date = new Date();
-  date.setMonth(date.getMonth() - months);
-  return date;
-}
-
 function daysAgo(days: number) {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+}
+
+function analyticsHistoryWindow(context: Awaited<ReturnType<typeof getVenuePlanContext>>) {
+  const allowedTo = new Date();
+  const allowedFrom = isUnlimited(context.analyticsHistoryDays)
+    ? new Date(0)
+    : daysAgo(context.analyticsHistoryDays);
+
+  return { allowedFrom, allowedTo };
 }
 
 function clampRange(from: Date, to: Date, allowedFrom: Date, allowedTo: Date) {
@@ -239,10 +242,7 @@ export async function assertAnalyticsRangeAllowed(
     throw new HttpError(403, 'errors.advancedAnalyticsRequired');
   }
 
-  const allowedTo = new Date();
-  const allowedFrom = isUnlimited(context.analyticsHistoryDays)
-    ? new Date(0)
-    : daysAgo(context.analyticsHistoryDays);
+  const { allowedFrom, allowedTo } = analyticsHistoryWindow(context);
   const range = clampRange(from, to, allowedFrom, allowedTo);
 
   return {
@@ -269,16 +269,15 @@ export async function getFinanceAllowance(venueId: string) {
     context.financeModule &&
     context.status !== SubscriptionStatus.CANCELED &&
     context.status !== SubscriptionStatus.EXPIRED;
-  const historyMonths = context.financeAdvancedAnalytics ? 12 : 3;
-  const allowedFrom = monthsAgo(historyMonths);
-  const allowedTo = new Date();
+  const { allowedFrom, allowedTo } = analyticsHistoryWindow(context);
 
   return {
     plan: context.plan,
     subscriptionStatus: context.status,
     canUseFinance,
     canUseAdvancedFinanceAnalytics: context.financeAdvancedAnalytics,
-    historyMonths,
+    historyDays: plainLimit(context.analyticsHistoryDays),
+    allTimeHistory: isUnlimited(context.analyticsHistoryDays),
     allowedFrom,
     allowedTo,
   };
@@ -308,8 +307,6 @@ export async function assertFinanceRangeAllowed(venueId: string, from: Date, to:
   return {
     ...allowance,
     ...range,
-    feature: allowance.canUseAdvancedFinanceAnalytics
-      ? planGuardFeatures.financeAdvancedAnalytics
-      : planGuardFeatures.financeModule,
+    feature: planGuardFeatures.analyticsHistory,
   };
 }
