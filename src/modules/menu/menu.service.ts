@@ -3,8 +3,15 @@ import { prisma } from '../../database/prisma';
 import { requireBranchAccess } from '../../common/auth/branch-access';
 import { HttpError } from '../../common/http/http-error';
 import type { SessionPayload } from '../../common/middleware/auth.middleware';
-import { deleteImageByUrl, deleteImagesByUrl, imageUrlChanged } from '../../storage/image-storage.service';
-import { analyticsStatsByMenuIds, menuAnalyticsSnapshot } from '../analytics/analytics-event-log-stats';
+import {
+  deleteImageByUrl,
+  deleteImagesByUrl,
+  imageUrlChanged,
+} from '../../storage/image-storage.service';
+import {
+  analyticsStatsByMenuIds,
+  menuAnalyticsSnapshot,
+} from '../analytics/analytics-event-log-stats';
 import { assertBranchMutationAllowed } from '../subscription/plan-guards';
 import type { z } from 'zod';
 import type {
@@ -117,7 +124,11 @@ export async function getBranchMenu(session: SessionPayload | undefined, branchI
     include: managedMenuInclude,
   });
 
-  return addMenuAnalyticsSnapshot(menu);
+  const venue = await prisma.venue.findFirst({
+    where: { branches: { some: { id: branchId } } },
+  });
+
+  return { ...(await addMenuAnalyticsSnapshot(menu)), venue: venue };
 }
 
 export async function createBranchMenu(
@@ -180,7 +191,8 @@ export async function deleteBranchMenu(session: SessionPayload | undefined, bran
   await prisma.menu.delete({ where: { id: menu.id } });
   await deleteImagesByUrl([
     ...(menuImages?.categories.map((category) => category.imageUrl) ?? []),
-    ...(menuImages?.categories.flatMap((category) => category.items.map((item) => item.imageUrl)) ?? []),
+    ...(menuImages?.categories.flatMap((category) => category.items.map((item) => item.imageUrl)) ??
+      []),
   ]);
   return { deleted: true };
 }
@@ -249,7 +261,10 @@ export async function updateCategory(
     include: { items: { orderBy: { sortOrder: 'asc' } } },
   });
 
-  if (input.imageUrl !== undefined && imageUrlChanged(existingCategory.imageUrl, category.imageUrl)) {
+  if (
+    input.imageUrl !== undefined &&
+    imageUrlChanged(existingCategory.imageUrl, category.imageUrl)
+  ) {
     await deleteImageByUrl(existingCategory.imageUrl);
   }
 
