@@ -31,7 +31,7 @@ const feedbackBranchSelect = Prisma.validator<Prisma.BranchSelect>()({
 });
 
 function isPrivateIssue(rating: number) {
-  return rating <= 3;
+  return rating <= 2;
 }
 
 function feedbackSelect() {
@@ -116,7 +116,7 @@ export async function getPublicFeedbackList(query: z.infer<typeof publicFeedback
   const where: Prisma.GuestFeedbackWhereInput = {
     venueId: query.venueId,
     branchId: query.branchId,
-    rating: { gte: 4 },
+    rating: { gte: 3 },
     status: { not: 'ARCHIVED' },
     // comment: { not: null },
     branch: {
