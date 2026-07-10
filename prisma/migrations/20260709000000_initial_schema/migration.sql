@@ -171,6 +171,8 @@ CREATE TABLE "GuestFeedback" (
     "menuId" TEXT,
     "rating" INTEGER NOT NULL,
     "comment" TEXT,
+    "guestName" TEXT,
+    "guestPhone" TEXT,
     "status" "GuestFeedbackStatus" NOT NULL DEFAULT 'NEW',
     "locale" TEXT,
     "googleReviewOffered" BOOLEAN NOT NULL DEFAULT false,
@@ -736,3 +738,4 @@ ALTER TABLE "Venue" ADD CONSTRAINT "Venue_ownerId_fkey" FOREIGN KEY ("ownerId") 
 
 -- AddForeignKey
 ALTER TABLE "Branch" ADD CONSTRAINT "Branch_venueId_fkey" FOREIGN KEY ("venueId") REFERENCES "Venue"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+

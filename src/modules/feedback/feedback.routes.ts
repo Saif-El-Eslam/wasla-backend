@@ -1,4 +1,4 @@
-import { Router } from 'express';
+﻿import { Router } from 'express';
 import { requireAuth } from '../../common/middleware/auth.middleware';
 import {
   authenticatedRateLimit,
@@ -8,6 +8,7 @@ import { validateRequest } from '../../common/middleware/validate.middleware';
 import {
   createPublicFeedbackController,
   getFeedbackDashboardController,
+  getPublicFeedbackController,
   markGoogleReviewClickController,
   updateFeedbackStatusController,
 } from './feedback.controller';
@@ -15,6 +16,7 @@ import {
   feedbackParamsSchema,
   feedbackQuerySchema,
   publicFeedbackClickSchema,
+  publicFeedbackListQuerySchema,
   publicFeedbackSchema,
   updateFeedbackStatusSchema,
 } from './feedback.schemas';
@@ -22,6 +24,12 @@ import {
 export const publicFeedbackRouter = Router();
 export const feedbackRouter = Router();
 
+publicFeedbackRouter.get(
+  '/',
+  publicAnalyticsRateLimit,
+  validateRequest({ query: publicFeedbackListQuerySchema }),
+  getPublicFeedbackController,
+);
 publicFeedbackRouter.post(
   '/',
   publicAnalyticsRateLimit,
@@ -46,3 +54,6 @@ feedbackRouter.patch(
   validateRequest({ params: feedbackParamsSchema, body: updateFeedbackStatusSchema }),
   updateFeedbackStatusController,
 );
+
+
+

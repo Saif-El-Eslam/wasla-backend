@@ -1,4 +1,4 @@
-import { GuestFeedbackStatus } from '@prisma/client';
+﻿import { GuestFeedbackStatus } from '@prisma/client';
 import { z } from 'zod';
 
 const optionalBooleanQueryParam = z.preprocess((value) => {
@@ -19,7 +19,16 @@ export const publicFeedbackSchema = z.object({
   menuId: z.uuid().optional(),
   rating: z.number().int().min(1).max(5),
   comment: z.string().trim().max(1000).optional(),
+  guestName: z.string().trim().max(120).optional(),
+  guestPhone: z.string().trim().max(40).optional(),
   locale: z.enum(['ar', 'en']).optional(),
+});
+
+export const publicFeedbackListQuerySchema = z.object({
+  venueId: z.uuid(),
+  branchId: z.uuid(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(20).default(8),
 });
 
 export const publicFeedbackClickSchema = z.object({
@@ -42,3 +51,4 @@ export const feedbackParamsSchema = z.object({
 export const updateFeedbackStatusSchema = z.object({
   status: z.enum(GuestFeedbackStatus),
 });
+

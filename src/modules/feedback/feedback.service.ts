@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+﻿import { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma';
 import {
   branchScopeWhere,
@@ -11,6 +11,7 @@ import { buildPaginationMeta } from '../../common/pagination/pagination';
 import type { z } from 'zod';
 import type {
   feedbackQuerySchema,
+  publicFeedbackListQuerySchema,
   publicFeedbackSchema,
   updateFeedbackStatusSchema,
 } from './feedback.schemas';
@@ -41,6 +42,8 @@ function feedbackSelect() {
     menuId: true,
     rating: true,
     comment: true,
+    guestName: true,
+    guestPhone: true,
     status: true,
     locale: true,
     googleReviewOffered: true,
@@ -78,6 +81,8 @@ export async function createPublicFeedback(
       menuId,
       rating: input.rating,
       comment: input.comment || null,
+      guestName: input.guestName || null,
+      guestPhone: input.guestPhone || null,
       locale: input.locale,
       googleReviewOffered: shouldOfferGoogleReview,
       ownerNotifiedAt: privateIssue ? new Date() : null,
@@ -93,6 +98,61 @@ export async function createPublicFeedback(
       googleReviewUrl: shouldOfferGoogleReview ? branch.googleReviewUrl : null,
       privateIssue,
     },
+  };
+}
+
+function publicFeedbackSelect() {
+  return {
+    id: true,
+    rating: true,
+    comment: true,
+    guestName: true,
+    createdAt: true,
+    branch: { select: { id: true, name: true, slug: true } },
+  } satisfies Prisma.GuestFeedbackSelect;
+}
+
+export async function getPublicFeedbackList(query: z.infer<typeof publicFeedbackListQuerySchema>) {
+  const where: Prisma.GuestFeedbackWhereInput = {
+    venueId: query.venueId,
+    branchId: query.branchId,
+    rating: { gte: 4 },
+    status: { not: 'ARCHIVED' },
+    // comment: { not: null },
+    branch: {
+      active: true,
+      venueId: query.venueId,
+    },
+  };
+  const skip = (query.page - 1) * query.limit;
+
+  const [items, total, aggregate] = await prisma.$transaction([
+    prisma.guestFeedback.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: query.limit,
+      select: publicFeedbackSelect(),
+    }),
+    prisma.guestFeedback.count({ where }),
+    prisma.guestFeedback.aggregate({
+      where,
+      _avg: { rating: true },
+    }),
+  ]);
+
+  return {
+    summary: {
+      averageRating: aggregate._avg.rating ?? 0,
+      total,
+    },
+    feedback: items,
+    pagination: buildPaginationMeta(total, {
+      paginate: true,
+      page: query.page,
+      limit: query.limit,
+      skip,
+    }),
   };
 }
 
@@ -129,7 +189,7 @@ export async function getFeedbackDashboard(
     venueId: user.venueId,
     branchId: query.branchId,
     rating: query.rating,
-    status: query.status,
+    ...(query.status ? { status: query.status } : { status: { not: 'ARCHIVED' } }),
     ...(query.issueOnly ? { rating: { lte: 3 } } : {}),
     branch: branchWhere,
   };

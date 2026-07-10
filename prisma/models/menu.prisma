@@ -57,6 +57,8 @@ model GuestFeedback {
   menuId                String?
   rating                Int
   comment               String?
+  guestName             String?
+  guestPhone            String?
   status                GuestFeedbackStatus @default(NEW)
   locale                String?
   googleReviewOffered   Boolean             @default(false)
@@ -205,3 +207,4 @@ model AnalyticsEventLog {
   @@index([menuId, createdAt])
   @@index([eventType, createdAt])
 }
+
