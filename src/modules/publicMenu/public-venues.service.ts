@@ -43,6 +43,7 @@ const publicVenueSelect = Prisma.validator<Prisma.VenueSelect>()({
       logoUrl: true,
       coverUrl: true,
       googleMapsUrl: true,
+      googleReviewUrl: true,
       instagramUrl: true,
       facebookUrl: true,
       openingHours: true,
@@ -71,7 +72,9 @@ const publicVenueSelect = Prisma.validator<Prisma.VenueSelect>()({
 type PublicVenueRecord = Prisma.VenueGetPayload<{ select: typeof publicVenueSelect }>;
 type PublicBranchRecord = PublicVenueRecord['branches'][number];
 
-function buildVenueSearchWhere(query: z.infer<typeof publicVenueListQuerySchema>): Prisma.VenueWhereInput {
+function buildVenueSearchWhere(
+  query: z.infer<typeof publicVenueListQuerySchema>,
+): Prisma.VenueWhereInput {
   const filters: Prisma.VenueWhereInput[] = [];
 
   if (query.type) {
@@ -130,6 +133,7 @@ function compactPublicBranch(branch: PublicBranchRecord) {
     logoUrl: branch.logoUrl,
     coverUrl: branch.coverUrl,
     googleMapsUrl: branch.googleMapsUrl,
+    googleReviewUrl: branch.googleReviewUrl,
     instagramUrl: branch.instagramUrl,
     facebookUrl: branch.facebookUrl,
     openingHours: branch.openingHours,

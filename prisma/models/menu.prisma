@@ -15,6 +15,12 @@ enum AnalyticsEventType {
   ITEM_VIEW
 }
 
+enum GuestFeedbackStatus {
+  NEW
+  REVIEWED
+  ARCHIVED
+}
+
 enum ExtractionJobStatus {
   PENDING
   PROCESSING
@@ -25,22 +31,50 @@ enum ExtractionJobStatus {
 }
 
 model Menu {
-  id          String         @id @default(uuid())
-  branchId    String         @unique
-  theme       MenuTheme      @default(MODERN)
-  showPrices  Boolean        @default(true)
+  id          String    @id @default(uuid())
+  branchId    String    @unique
+  theme       MenuTheme @default(MODERN)
+  showPrices  Boolean   @default(true)
   publishedAt DateTime?
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  branch      Branch         @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  categories  MenuCategory[]
-  qrCode      MenuQrCode?
-  analytics   MenuAnalytics?
+  branch          Branch              @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  categories      MenuCategory[]
+  qrCode          MenuQrCode?
+  analytics       MenuAnalytics?
   analyticsEvents AnalyticsEventLog[]
-  extractionJobs ExtractionJob[]
+  guestFeedbacks  GuestFeedback[]
+  extractionJobs  ExtractionJob[]
 
   @@index([branchId, publishedAt])
+}
+
+model GuestFeedback {
+  id                    String              @id @default(uuid())
+  venueId               String
+  branchId              String
+  menuId                String?
+  rating                Int
+  comment               String?
+  status                GuestFeedbackStatus @default(NEW)
+  locale                String?
+  googleReviewOffered   Boolean             @default(false)
+  googleReviewClickedAt DateTime?
+  ownerNotifiedAt       DateTime?
+  userAgent             String?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  venue  Venue  @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  menu   Menu?  @relation(fields: [menuId], references: [id], onDelete: SetNull)
+
+  @@index([venueId, createdAt])
+  @@index([branchId, createdAt])
+  @@index([rating, createdAt])
+  @@index([status, createdAt])
+  @@index([googleReviewClickedAt])
 }
 
 model ExtractionJob {
@@ -63,7 +97,7 @@ model ExtractionJob {
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
 
-  menu             Menu                @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  menu Menu @relation(fields: [menuId], references: [id], onDelete: Cascade)
 
   @@index([venueId, createdAt])
   @@index([branchId, createdAt])
@@ -71,39 +105,39 @@ model ExtractionJob {
 }
 
 model MenuCategory {
-  id          String     @id @default(uuid())
+  id          String   @id @default(uuid())
   menuId      String
   name        Json
   description Json?
   imageUrl    String?
-  sortOrder   Int        @default(0)
-  active      Boolean    @default(true)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  sortOrder   Int      @default(0)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  menu        Menu       @relation(fields: [menuId], references: [id], onDelete: Cascade)
-  items       MenuItem[]
+  menu            Menu                @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  items           MenuItem[]
   analyticsEvents AnalyticsEventLog[]
 
   @@index([menuId, sortOrder])
 }
 
 model MenuItem {
-  id          String       @id @default(uuid())
+  id          String   @id @default(uuid())
   categoryId  String
   name        Json
   description Json?
-  price       Decimal?     @db.Decimal(10, 2)
+  price       Decimal? @db.Decimal(10, 2)
   imageUrl    String?
-  tags        String[]     @default([])
+  tags        String[] @default([])
   calories    Int?
-  available   Boolean      @default(true)
-  sortOrder   Int          @default(0)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  available   Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  category    MenuCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  prices      MenuItemPrice[]
+  category        MenuCategory        @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  prices          MenuItemPrice[]
   analyticsEvents AnalyticsEventLog[]
 
   @@index([categoryId, sortOrder])
@@ -118,22 +152,22 @@ model MenuItemPrice {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  item      MenuItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  item MenuItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
   @@unique([itemId, label])
   @@index([itemId, sortOrder])
 }
 
 model MenuQrCode {
-  id          String   @id @default(uuid())
-  menuId      String   @unique
-  shortCode   String   @unique
-  targetUrl   String?
-  imageUrl    String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(uuid())
+  menuId    String   @unique
+  shortCode String   @unique
+  targetUrl String?
+  imageUrl  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  menu        Menu     @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  menu Menu @relation(fields: [menuId], references: [id], onDelete: Cascade)
 }
 
 model MenuAnalytics {
@@ -147,7 +181,7 @@ model MenuAnalytics {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  menu           Menu     @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  menu Menu @relation(fields: [menuId], references: [id], onDelete: Cascade)
 }
 
 model AnalyticsEventLog {
@@ -160,11 +194,11 @@ model AnalyticsEventLog {
   eventType  AnalyticsEventType
   createdAt  DateTime           @default(now())
 
-  venue      Venue              @relation(fields: [venueId], references: [id], onDelete: Cascade)
-  branch     Branch             @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  menu       Menu?              @relation(fields: [menuId], references: [id], onDelete: SetNull)
-  category   MenuCategory?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  item       MenuItem?          @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  venue    Venue         @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  branch   Branch        @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  menu     Menu?         @relation(fields: [menuId], references: [id], onDelete: SetNull)
+  category MenuCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  item     MenuItem?     @relation(fields: [itemId], references: [id], onDelete: SetNull)
 
   @@index([venueId, createdAt])
   @@index([branchId, createdAt])

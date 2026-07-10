@@ -6,26 +6,26 @@ enum UserRole {
 }
 
 model User {
-  id               String    @id @default(uuid())
-  venueId          String?
-  phone            String    @unique
-  email            String?   @unique
-  name             String?
-  passwordHash     String
-  role             UserRole  @default(OWNER)
-  phoneVerifiedAt  DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id              String    @id @default(uuid())
+  venueId         String?
+  phone           String    @unique
+  email           String?   @unique
+  name            String?
+  passwordHash    String
+  role            UserRole  @default(OWNER)
+  phoneVerifiedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  venue            Venue?    @relation(fields: [venueId], references: [id], onDelete: SetNull)
-  ownedVenues      Venue[]   @relation("VenueOwner")
-  otpCodes         OtpCode[]
-  branchAccesses   UserBranchAccess[]
-  subscriptionHistoryChanges SubscriptionHistory[] @relation("SubscriptionHistoryChangedBy")
-  createdFinancialTransactions FinancialTransaction[] @relation("FinancialTransactionCreatedBy")
-  updatedFinancialTransactions FinancialTransaction[] @relation("FinancialTransactionUpdatedBy")
-  deletedFinancialTransactions FinancialTransaction[] @relation("FinancialTransactionDeletedBy")
-  financialAuditLogs FinancialTransactionAuditLog[] @relation("FinancialAuditActor")
+  venue                        Venue?                         @relation(fields: [venueId], references: [id], onDelete: SetNull)
+  ownedVenues                  Venue[]                        @relation("VenueOwner")
+  otpCodes                     OtpCode[]
+  branchAccesses               UserBranchAccess[]
+  subscriptionHistoryChanges   SubscriptionHistory[]          @relation("SubscriptionHistoryChangedBy")
+  createdFinancialTransactions FinancialTransaction[]         @relation("FinancialTransactionCreatedBy")
+  updatedFinancialTransactions FinancialTransaction[]         @relation("FinancialTransactionUpdatedBy")
+  deletedFinancialTransactions FinancialTransaction[]         @relation("FinancialTransactionDeletedBy")
+  financialAuditLogs           FinancialTransactionAuditLog[] @relation("FinancialAuditActor")
 
   @@index([venueId])
 }
@@ -36,24 +36,24 @@ model UserBranchAccess {
   branchId  String
   createdAt DateTime @default(now())
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
   @@unique([userId, branchId])
   @@index([branchId])
 }
 
 model OtpCode {
-  id          String    @id @default(uuid())
-  userId      String
-  codeHash    String
+  id                    String     @id @default(uuid())
+  userId                String
+  codeHash              String
   deliveryCodeEncrypted String?
-  purpose     OtpPurpose
-  expiresAt   DateTime
-  consumedAt  DateTime?
-  createdAt   DateTime  @default(now())
+  purpose               OtpPurpose
+  expiresAt             DateTime
+  consumedAt            DateTime?
+  createdAt             DateTime   @default(now())
 
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, purpose])
 }

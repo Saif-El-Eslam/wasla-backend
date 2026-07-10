@@ -27,43 +27,43 @@ enum PlanFeatureValueType {
 }
 
 model Subscription {
-  id                String              @id @default(uuid())
-  venueId           String              @unique
-  plan              MenuPlan            @default(FREE)
-  status            SubscriptionStatus  @default(TRIALING)
-  paymentProvider   PaymentProvider     @default(MANUAL)
+  id                String             @id @default(uuid())
+  venueId           String             @unique
+  plan              MenuPlan           @default(FREE)
+  status            SubscriptionStatus @default(TRIALING)
+  paymentProvider   PaymentProvider    @default(MANUAL)
   currentPeriodEnds DateTime?
   notes             String?
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 
-  venue             Venue               @relation(fields: [venueId], references: [id], onDelete: Cascade)
-  planRecord        Plan                @relation(fields: [plan], references: [code])
-  history           SubscriptionHistory[]
+  venue      Venue                 @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  planRecord Plan                  @relation(fields: [plan], references: [code])
+  history    SubscriptionHistory[]
 
   @@index([plan])
   @@index([status, currentPeriodEnds])
 }
 
 model SubscriptionHistory {
-  id                String              @id @default(uuid())
-  sequence          Int                 @unique @default(autoincrement())
+  id                String             @id @default(uuid())
+  sequence          Int                @unique @default(autoincrement())
   subscriptionId    String?
   venueId           String
   plan              MenuPlan
   status            SubscriptionStatus
-  paymentProvider   PaymentProvider     @default(MANUAL)
+  paymentProvider   PaymentProvider    @default(MANUAL)
   annualAmountEgp   Int?
   currentPeriodEnds DateTime?
   notes             String?
-  changeType        String              @default("ADMIN_UPDATE")
+  changeType        String             @default("ADMIN_UPDATE")
   changedById       String?
-  createdAt         DateTime            @default(now())
+  createdAt         DateTime           @default(now())
 
-  subscription      Subscription?       @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
-  venue             Venue               @relation(fields: [venueId], references: [id], onDelete: Cascade)
-  planRecord        Plan                @relation(fields: [plan], references: [code])
-  changedBy         User?               @relation("SubscriptionHistoryChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  venue        Venue         @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  planRecord   Plan          @relation(fields: [plan], references: [code])
+  changedBy    User?         @relation("SubscriptionHistoryChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
 
   @@index([subscriptionId, sequence])
   @@index([venueId, sequence])
@@ -73,56 +73,56 @@ model SubscriptionHistory {
 }
 
 model Plan {
-  id              String                @id @default(uuid())
-  code            MenuPlan              @unique
-  publicName      Json
-  internalName    String
-  description     Json?
-  priceAnnualEgp  Int?
-  displayOrder    Int                   @default(0)
-  active          Boolean               @default(true)
-  comingSoon      Boolean               @default(false)
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
+  id             String   @id @default(uuid())
+  code           MenuPlan @unique
+  publicName     Json
+  internalName   String
+  description    Json?
+  priceAnnualEgp Int?
+  displayOrder   Int      @default(0)
+  active         Boolean  @default(true)
+  comingSoon     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  featureMappings PlanFeatureMapping[]
-  subscriptions   Subscription[]
+  featureMappings     PlanFeatureMapping[]
+  subscriptions       Subscription[]
   subscriptionHistory SubscriptionHistory[]
 
   @@index([active, displayOrder])
 }
 
 model Feature {
-  id              String                @id @default(uuid())
-  key             String                @unique
-  name            Json
-  description     Json?
-  valueType       PlanFeatureValueType  @default(BOOLEAN)
-  unit            String?
-  displayOrder    Int                   @default(0)
-  active          Boolean               @default(true)
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
+  id           String               @id @default(uuid())
+  key          String               @unique
+  name         Json
+  description  Json?
+  valueType    PlanFeatureValueType @default(BOOLEAN)
+  unit         String?
+  displayOrder Int                  @default(0)
+  active       Boolean              @default(true)
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
 
-  planMappings    PlanFeatureMapping[]
+  planMappings PlanFeatureMapping[]
 
   @@index([active, displayOrder])
 }
 
 model PlanFeatureMapping {
-  id             String    @id @default(uuid())
-  planId         String
-  featureId      String
-  enabled        Boolean   @default(true)
-  valueInt       Int?
-  valueBool      Boolean?
-  valueString    String?
-  valueJson      Json?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id          String   @id @default(uuid())
+  planId      String
+  featureId   String
+  enabled     Boolean  @default(true)
+  valueInt    Int?
+  valueBool   Boolean?
+  valueString String?
+  valueJson   Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  plan           Plan      @relation(fields: [planId], references: [id], onDelete: Cascade)
-  feature        Feature   @relation(fields: [featureId], references: [id], onDelete: Cascade)
+  plan    Plan    @relation(fields: [planId], references: [id], onDelete: Cascade)
+  feature Feature @relation(fields: [featureId], references: [id], onDelete: Cascade)
 
   @@unique([planId, featureId])
   @@index([featureId])

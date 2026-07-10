@@ -20,6 +20,9 @@ CREATE TYPE "MenuTheme" AS ENUM ('CLASSIC', 'MODERN', 'MINIMAL');
 CREATE TYPE "AnalyticsEventType" AS ENUM ('VENUE_VIEW', 'MENU_VIEW', 'CATEGORY_VIEW', 'QR_SCAN', 'WHATSAPP_CLICK', 'CALL_CLICK', 'MAPS_CLICK', 'ITEM_VIEW');
 
 -- CreateEnum
+CREATE TYPE "GuestFeedbackStatus" AS ENUM ('NEW', 'REVIEWED', 'ARCHIVED');
+
+-- CreateEnum
 CREATE TYPE "ExtractionJobStatus" AS ENUM ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'APPROVED', 'REJECTED');
 
 -- CreateEnum
@@ -158,6 +161,26 @@ CREATE TABLE "Menu" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "Menu_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "GuestFeedback" (
+    "id" TEXT NOT NULL,
+    "venueId" TEXT NOT NULL,
+    "branchId" TEXT NOT NULL,
+    "menuId" TEXT,
+    "rating" INTEGER NOT NULL,
+    "comment" TEXT,
+    "status" "GuestFeedbackStatus" NOT NULL DEFAULT 'NEW',
+    "locale" TEXT,
+    "googleReviewOffered" BOOLEAN NOT NULL DEFAULT false,
+    "googleReviewClickedAt" TIMESTAMP(3),
+    "ownerNotifiedAt" TIMESTAMP(3),
+    "userAgent" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "GuestFeedback_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -395,6 +418,7 @@ CREATE TABLE "Branch" (
     "whatsapp" TEXT,
     "address" JSONB,
     "googleMapsUrl" TEXT,
+    "googleReviewUrl" TEXT,
     "instagramUrl" TEXT,
     "facebookUrl" TEXT,
     "openingHours" JSONB,
@@ -472,6 +496,21 @@ CREATE UNIQUE INDEX "Menu_branchId_key" ON "Menu"("branchId");
 
 -- CreateIndex
 CREATE INDEX "Menu_branchId_publishedAt_idx" ON "Menu"("branchId", "publishedAt");
+
+-- CreateIndex
+CREATE INDEX "GuestFeedback_venueId_createdAt_idx" ON "GuestFeedback"("venueId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "GuestFeedback_branchId_createdAt_idx" ON "GuestFeedback"("branchId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "GuestFeedback_rating_createdAt_idx" ON "GuestFeedback"("rating", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "GuestFeedback_status_createdAt_idx" ON "GuestFeedback"("status", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "GuestFeedback_googleReviewClickedAt_idx" ON "GuestFeedback"("googleReviewClickedAt");
 
 -- CreateIndex
 CREATE INDEX "ExtractionJob_venueId_createdAt_idx" ON "ExtractionJob"("venueId", "createdAt");
@@ -625,6 +664,15 @@ ALTER TABLE "FinancialTransactionAuditLog" ADD CONSTRAINT "FinancialTransactionA
 
 -- AddForeignKey
 ALTER TABLE "Menu" ADD CONSTRAINT "Menu_branchId_fkey" FOREIGN KEY ("branchId") REFERENCES "Branch"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "GuestFeedback" ADD CONSTRAINT "GuestFeedback_venueId_fkey" FOREIGN KEY ("venueId") REFERENCES "Venue"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "GuestFeedback" ADD CONSTRAINT "GuestFeedback_branchId_fkey" FOREIGN KEY ("branchId") REFERENCES "Branch"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "GuestFeedback" ADD CONSTRAINT "GuestFeedback_menuId_fkey" FOREIGN KEY ("menuId") REFERENCES "Menu"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ExtractionJob" ADD CONSTRAINT "ExtractionJob_menuId_fkey" FOREIGN KEY ("menuId") REFERENCES "Menu"("id") ON DELETE CASCADE ON UPDATE CASCADE;

@@ -55,6 +55,7 @@ export async function getPublicBranchMenu(venueSlug: string, branchSlug: string)
       whatsapp: branch.whatsapp,
       address: branch.address,
       googleMapsUrl: branch.googleMapsUrl,
+      googleReviewUrl: branch.googleReviewUrl,
       instagramUrl: branch.instagramUrl,
       facebookUrl: branch.facebookUrl,
       openingHours: branch.openingHours,
