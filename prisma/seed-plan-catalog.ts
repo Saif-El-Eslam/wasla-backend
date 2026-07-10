@@ -21,7 +21,7 @@ const plans = [
     publicName: { ar: 'Wasla Starter', en: 'Wasla Starter' },
     internalName: 'Wasla Starter',
     description: { ar: 'Affordable menu digitization.', en: 'Affordable menu digitization.' },
-    priceAnnualEgp: 500,
+    priceAnnualEgp: 750,
     displayOrder: 20,
     active: true,
     comingSoon: false,
@@ -141,7 +141,7 @@ function mappingFor(planCode: MenuPlan, featureKey: string) {
       ANALYTICS_HISTORY_DAYS: { valueInt: 7 },
       QR_BRANDING: { valueString: 'WASLA_SIGNED' },
       STAFF_USERS: { valueInt: 1 },
-      LANGUAGES: { valueInt: 1 },
+      LANGUAGES: { valueInt: 2 },
     },
     MENU_STARTER: {
       BRANCH_LIMIT: { valueInt: 1 },
