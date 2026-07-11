@@ -31,10 +31,14 @@ const envSchema = z.object({
   GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
   GEMINI_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.1),
   GEMINI_MAX_IMAGES_PER_EXTRACTION: z.coerce.number().int().positive().default(8),
-  GEMINI_MAX_INLINE_REQUEST_MB: z.coerce.number().int().positive().default(20),
-  GEMINI_EXTRACTION_TIMEOUT_MS: z.coerce.number().int().positive().default(600_000),
-  EXTRACTION_STALE_JOB_AFTER_MS: z.coerce.number().int().positive().default(660_000),
-  EXTRACTION_STALE_SWEEP_INTERVAL_MS: z.coerce.number().int().positive().default(300_000),
+  GEMINI_MAX_INLINE_REQUEST_MB: z.coerce.number().int().positive().default(5),
+  GEMINI_EXTRACTION_TIMEOUT_MS: z.coerce.number().int().positive().default(300_000),
+  GEMINI_HTTP_RETRY_ATTEMPTS: z.coerce.number().int().min(1).max(5).default(2),
+  EXTRACTION_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
+  EXTRACTION_RETRY_BASE_DELAY_MS: z.coerce.number().int().positive().default(5_000),
+  EXTRACTION_WORKER_INTERVAL_MS: z.coerce.number().int().positive().default(10_000),
+  EXTRACTION_STALE_JOB_AFTER_MS: z.coerce.number().int().positive().default(330_000),
+  EXTRACTION_STALE_SWEEP_INTERVAL_MS: z.coerce.number().int().positive().default(150_000),
 });
 
 export const env = envSchema.parse(process.env);

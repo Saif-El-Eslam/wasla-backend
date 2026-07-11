@@ -61,7 +61,9 @@
     "extractionRejectNotAllowed": "Only completed or failed extraction jobs can be rejected.",
     "extractionMissingResult": "Extraction result is missing.",
     "extractionInvalidModelResponse": "Gemini returned an empty or invalid menu response.",
-    "extractionTimedOut": "Extraction took too long and was stopped. Please try again.",
+    "extractionTimedOut": "Extraction took too long after several automatic retries. You can retry it without uploading the images again.",
+    "extractionInterrupted": "Extraction was interrupted and has been resumed automatically.",
+    "extractionInputsMissing": "The saved extraction images are unavailable. Please start a new extraction.",
     "extractionApplyFailed": "The reviewed extraction could not be applied to this menu."
   },
   "logs": {

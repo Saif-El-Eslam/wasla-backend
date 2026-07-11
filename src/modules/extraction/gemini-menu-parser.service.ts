@@ -13,11 +13,13 @@ type ParserResult = {
   confidenceScore: number;
   rawModelResponse: string;
   warnings: string[];
+  providerResponseId?: string;
 };
 
 type ParserOptions = {
   jobId?: string;
   signal?: AbortSignal;
+  prepared?: boolean;
 };
 
 function parserLog(options: ParserOptions, phase: string, details: Record<string, unknown> = {}) {
@@ -78,35 +80,37 @@ Rules:
 `;
 }
 
-async function prepareInlineImages(images: ParserImage[]) {
+export async function prepareMenuImages(images: ParserImage[]): Promise<ParserImage[]> {
   const prepared = await Promise.all(
-    images.map(async (image) => {
-      const buffer = await sharp(image.buffer)
+    images.map(async (image) => ({
+      buffer: await sharp(image.buffer)
         .rotate()
         .resize({ width: 2000, height: 2000, fit: 'inside', withoutEnlargement: true })
         .jpeg({ quality: 82, mozjpeg: true })
-        .toBuffer();
-
-      return {
-        inlineData: {
-          data: buffer.toString('base64'),
-          mimeType: 'image/jpeg',
-        },
-        byteLength: buffer.byteLength,
-      };
-    }),
+        .toBuffer(),
+      mimeType: 'image/jpeg',
+    })),
   );
 
-  const totalBytes = prepared.reduce((sum, image) => sum + image.byteLength, 0);
+  const totalBytes = prepared.reduce((sum, image) => sum + image.buffer.byteLength, 0);
   const maxInlineBytes = env.GEMINI_MAX_INLINE_REQUEST_MB * 1024 * 1024;
 
   if (totalBytes > maxInlineBytes) {
     throw new HttpError(413, 'errors.extractionImagesTooLarge');
   }
 
+  return prepared;
+}
+
+function inlineImages(images: ParserImage[]) {
   return {
-    inlineImages: prepared.map(({ byteLength: _byteLength, ...image }) => image),
-    totalBytes,
+    inlineImages: images.map((image) => ({
+      inlineData: {
+        data: image.buffer.toString('base64'),
+        mimeType: image.mimeType,
+      },
+    })),
+    totalBytes: images.reduce((sum, image) => sum + image.buffer.byteLength, 0),
   };
 }
 
@@ -262,7 +266,8 @@ export async function parseMenuImages(
     const { GoogleGenAI, Type } = await import('@google/genai');
 
     parserLog(options, 'preparing_images');
-    const prepared = await prepareInlineImages(images);
+    const preparedImages = options.prepared ? images : await prepareMenuImages(images);
+    const prepared = inlineImages(preparedImages);
     parserLog(options, 'images_prepared', {
       inlineImageCount: prepared.inlineImages.length,
       inlineBytes: prepared.totalBytes,
@@ -282,12 +287,17 @@ export async function parseMenuImages(
         responseSchema: buildResponseSchema(Type),
         temperature: env.GEMINI_TEMPERATURE,
         abortSignal: options.signal,
+        httpOptions: {
+          timeout: env.GEMINI_EXTRACTION_TIMEOUT_MS,
+          retryOptions: { attempts: env.GEMINI_HTTP_RETRY_ATTEMPTS },
+        },
       },
     });
     const rawModelResponse = String(result.text ?? '');
     parserLog(options, 'gemini_response_received', {
       durationMs: Date.now() - startedAt,
       rawResponseChars: rawModelResponse.length,
+      providerResponseId: result.responseId ?? null,
     });
 
     parserLog(options, 'parsing_response');
@@ -308,6 +318,7 @@ export async function parseMenuImages(
       confidenceScore,
       rawModelResponse,
       warnings: parsed.warnings,
+      providerResponseId: result.responseId,
     };
   } catch (error) {
     parserLog(options, 'failed', {

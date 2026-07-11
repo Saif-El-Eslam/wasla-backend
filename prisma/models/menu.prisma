@@ -89,6 +89,11 @@ model ExtractionJob {
   modelProvider    String              @default("google")
   modelName        String
   imageCount       Int                 @default(0)
+  attemptCount     Int                 @default(0)
+  maxAttempts      Int                 @default(3)
+  nextAttemptAt    DateTime            @default(now())
+  lastAttemptAt    DateTime?
+  providerResponseId String?
   rawModelResponse String?
   extractedMenu    Json?
   confidenceScore  Float?
@@ -99,11 +104,27 @@ model ExtractionJob {
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
 
-  menu Menu @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  menu        Menu                 @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  inputImages ExtractionJobImage[]
 
   @@index([venueId, createdAt])
   @@index([branchId, createdAt])
   @@index([menuId, status])
+  @@index([status, nextAttemptAt])
+}
+
+model ExtractionJobImage {
+  id        String   @id @default(uuid())
+  jobId     String
+  sortOrder Int
+  mimeType  String
+  data      Bytes
+  createdAt DateTime @default(now())
+
+  job ExtractionJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, sortOrder])
+  @@index([jobId])
 }
 
 model MenuCategory {

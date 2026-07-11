@@ -33,7 +33,9 @@ function localizeJobErrors<T>(value: T, locale?: string): T {
 
     return {
       ...job,
-      errors: job.errors.map((error) => (error.startsWith('errors.') ? translate(locale, error) : error)),
+      errors: job.errors.map((error) =>
+        error.startsWith('errors.') ? translate(locale, error) : error,
+      ),
     };
   };
 
@@ -54,7 +56,11 @@ function localizeJobErrors<T>(value: T, locale?: string): T {
 }
 
 export const startExtractionController = asyncHandler(async (req, res) => {
-  const result = await startExtractionJob(req.user, String(req.params.branchId), requestImages(req));
+  const result = await startExtractionJob(
+    req.user,
+    String(req.params.branchId),
+    requestImages(req),
+  );
   ok(res, localizeJobErrors(result, req.locale), 202);
 });
 
@@ -63,7 +69,6 @@ export const retryExtractionController = asyncHandler(async (req, res) => {
     req.user,
     String(req.params.branchId),
     String(req.params.jobId),
-    requestImages(req),
   );
   ok(res, localizeJobErrors(result, req.locale), 202);
 });
@@ -74,7 +79,11 @@ export const getLatestExtractionController = asyncHandler(async (req, res) => {
 });
 
 export const getExtractionController = asyncHandler(async (req, res) => {
-  const result = await getExtractionJob(req.user, String(req.params.branchId), String(req.params.jobId));
+  const result = await getExtractionJob(
+    req.user,
+    String(req.params.branchId),
+    String(req.params.jobId),
+  );
   ok(res, localizeJobErrors(result, req.locale));
 });
 

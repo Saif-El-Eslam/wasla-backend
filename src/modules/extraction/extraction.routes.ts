@@ -59,7 +59,6 @@ extractionRouter.post(
 extractionRouter.post(
   '/:branchId/menu/extractions/:jobId/retry',
   validateRequest({ params: extractionJobParamsSchema }),
-  upload.array('images', env.GEMINI_MAX_IMAGES_PER_EXTRACTION),
   retryExtractionController,
 );
 extractionRouter.post(
