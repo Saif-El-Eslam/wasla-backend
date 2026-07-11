@@ -1,4 +1,5 @@
 import { ExtractionJobStatus, Prisma } from '@prisma/client';
+import { waitUntil } from '@vercel/functions';
 import { prisma } from '../../database/prisma';
 import { requireBranchAccess } from '../../common/auth/branch-access';
 import { HttpError } from '../../common/http/http-error';
@@ -187,6 +188,48 @@ function retryAt(attemptCount: number) {
   return new Date(Date.now() + exponentialDelay + jitter);
 }
 
+function manualRetryExpiresAt() {
+  return new Date(Date.now() + env.EXTRACTION_MANUAL_RETRY_WINDOW_MS);
+}
+
+function terminalPayloadCleanup() {
+  return {
+    rawModelResponse: null,
+    extractedMenu: Prisma.DbNull,
+    confidenceScore: null,
+    providerResponseId: null,
+    warnings: [],
+  } satisfies Prisma.ExtractionJobUpdateManyMutationInput;
+}
+
+export async function cleanupExpiredExtractionJobs(now = new Date()) {
+  const purgeableJobs: Prisma.ExtractionJobWhereInput = {
+    cleanedUpAt: null,
+    OR: [
+      { status: ExtractionJobStatus.APPROVED },
+      {
+        status: { in: [ExtractionJobStatus.FAILED, ExtractionJobStatus.REJECTED] },
+        retryExpiresAt: { lte: now },
+      },
+    ],
+  };
+
+  const [images, jobs] = await prisma.$transaction([
+    prisma.extractionJobImage.deleteMany({
+      where: { job: { is: purgeableJobs } },
+    }),
+    prisma.extractionJob.updateMany({
+      where: purgeableJobs,
+      data: {
+        ...terminalPayloadCleanup(),
+        cleanedUpAt: now,
+      },
+    }),
+  ]);
+
+  return { jobs: jobs.count, images: images.count };
+}
+
 async function parseMenuImagesWithTimeout(jobId: string, images: UploadedImage[]) {
   const controller = new AbortController();
   let timeout: NodeJS.Timeout | undefined;
@@ -222,6 +265,9 @@ async function failExtractionJob(jobId: string, errorText: string) {
     where: { id: jobId, status: ExtractionJobStatus.PROCESSING },
     data: {
       status: ExtractionJobStatus.FAILED,
+      retryExpiresAt: manualRetryExpiresAt(),
+      cleanedUpAt: null,
+      ...terminalPayloadCleanup(),
       errors: [errorText],
     },
   });
@@ -322,6 +368,8 @@ async function processClaimedExtractionJob(jobId: string) {
         rawModelResponse: parsed.rawModelResponse,
         providerResponseId: parsed.providerResponseId,
         warnings: parsed.warnings,
+        retryExpiresAt: null,
+        cleanedUpAt: null,
         errors: [],
       },
     });
@@ -330,26 +378,36 @@ async function processClaimedExtractionJob(jobId: string) {
   }
 }
 
-let drainPromise: Promise<void> | null = null;
+type QueueDrainResult = {
+  processedJobs: number;
+};
 
-function triggerExtractionQueue() {
+let drainPromise: Promise<QueueDrainResult> | null = null;
+
+function triggerExtractionQueue(maxJobs = Number.POSITIVE_INFINITY) {
   if (drainPromise) {
     return drainPromise;
   }
 
   drainPromise = (async () => {
-    while (true) {
+    let processedJobs = 0;
+
+    while (processedJobs < maxJobs) {
       const jobId = await claimNextExtractionJob();
 
       if (!jobId) {
-        return;
+        break;
       }
 
       await processClaimedExtractionJob(jobId);
+      processedJobs += 1;
     }
+
+    return { processedJobs };
   })()
     .catch((error) => {
       console.error('[extraction] Queue drain failed', error);
+      return { processedJobs: 0 };
     })
     .finally(() => {
       drainPromise = null;
@@ -358,6 +416,18 @@ function triggerExtractionQueue() {
   return drainPromise;
 }
 
+function scheduleExtractionQueue() {
+  const isVercel = Boolean(process.env.VERCEL);
+  const maxJobs = isVercel ? env.EXTRACTION_MAINTENANCE_MAX_JOBS : Number.POSITIVE_INFINITY;
+  const queueWork = triggerExtractionQueue(maxJobs);
+
+  if (isVercel) {
+    waitUntil(Promise.all([queueWork, cleanupExpiredExtractionJobs()]));
+    return;
+  }
+
+  void queueWork;
+}
 export async function failStaleExtractionJobs(
   where: { venueId?: string; branchId?: string; jobId?: string } = {},
 ) {
@@ -391,6 +461,9 @@ export async function failStaleExtractionJobs(
       },
       data: {
         status: ExtractionJobStatus.FAILED,
+        retryExpiresAt: manualRetryExpiresAt(),
+        cleanedUpAt: null,
+        ...terminalPayloadCleanup(),
         errors: ['errors.extractionTimedOut'],
       },
     }),
@@ -403,22 +476,29 @@ export async function failStaleExtractionJobs(
       },
       data: {
         status: ExtractionJobStatus.FAILED,
+        retryExpiresAt: new Date(),
+        cleanedUpAt: new Date(),
+        ...terminalPayloadCleanup(),
         errors: ['errors.extractionInputsMissing'],
       },
     }),
   ]);
 
-  if (requeued.count > 0) {
-    void triggerExtractionQueue();
-  }
-
   return { requeued: requeued.count, failed: exhausted.count + missingInputs.count };
+}
+
+export async function runExtractionMaintenance() {
+  const recovery = await failStaleExtractionJobs();
+  const cleanup = await cleanupExpiredExtractionJobs();
+  const queue = await triggerExtractionQueue(env.EXTRACTION_MAINTENANCE_MAX_JOBS);
+
+  return { recovery, cleanup, queue };
 }
 
 export function startExtractionJobMaintenance() {
   let stopped = false;
 
-  const maintain = async () => {
+  const recoverAndDrain = async () => {
     if (stopped) {
       return;
     }
@@ -427,7 +507,7 @@ export function startExtractionJobMaintenance() {
     await triggerExtractionQueue();
   };
 
-  void maintain().catch((error) => {
+  void Promise.all([recoverAndDrain(), cleanupExpiredExtractionJobs()]).catch((error) => {
     console.error('[extraction] Failed to start extraction maintenance', error);
   });
 
@@ -437,19 +517,26 @@ export function startExtractionJobMaintenance() {
   workerInterval.unref?.();
 
   const staleInterval = setInterval(() => {
-    void maintain().catch((error) => {
+    void recoverAndDrain().catch((error) => {
       console.error('[extraction] Failed to recover stale extraction jobs', error);
     });
   }, env.EXTRACTION_STALE_SWEEP_INTERVAL_MS);
   staleInterval.unref?.();
 
+  const cleanupInterval = setInterval(() => {
+    void cleanupExpiredExtractionJobs().catch((error) => {
+      console.error('[extraction] Failed to clean extraction job payloads', error);
+    });
+  }, env.EXTRACTION_CLEANUP_INTERVAL_MS);
+  cleanupInterval.unref?.();
+
   return () => {
     stopped = true;
     clearInterval(workerInterval);
     clearInterval(staleInterval);
+    clearInterval(cleanupInterval);
   };
 }
-
 async function requireJobForBranch(
   session: SessionPayload | undefined,
   branchId: string,
@@ -509,7 +596,7 @@ export async function startExtractionJob(
     },
   });
 
-  void triggerExtractionQueue();
+  scheduleExtractionQueue();
 
   return {
     job: compactJob(job),
@@ -529,35 +616,57 @@ export async function retryExtractionJob(
     throw new HttpError(409, 'errors.extractionRetryNotAllowed');
   }
 
-  const inputCount = await prisma.extractionJobImage.count({ where: { jobId: job.id } });
-  if (inputCount === 0) {
-    throw new HttpError(409, 'errors.extractionInputsMissing');
+  if (!job.retryExpiresAt || job.retryExpiresAt.getTime() <= Date.now()) {
+    await cleanupExpiredExtractionJobs();
+    throw new HttpError(409, 'errors.extractionRetryExpired');
   }
 
-  const retried = await prisma.extractionJob.update({
-    where: { id: job.id },
-    data: {
-      status: ExtractionJobStatus.PENDING,
-      attemptCount: 0,
-      maxAttempts: env.EXTRACTION_MAX_ATTEMPTS,
-      nextAttemptAt: new Date(),
-      lastAttemptAt: null,
-      rawModelResponse: null,
-      providerResponseId: null,
-      extractedMenu: Prisma.JsonNull,
-      confidenceScore: null,
-      warnings: [],
-      errors: [],
-      approvedAt: null,
-      rejectedAt: null,
-    },
+  const retried = await prisma.$transaction(async (tx) => {
+    const inputCount = await tx.extractionJobImage.count({ where: { jobId: job.id } });
+
+    if (inputCount === 0) {
+      throw new HttpError(409, 'errors.extractionInputsMissing');
+    }
+
+    const reset = await tx.extractionJob.updateMany({
+      where: {
+        id: job.id,
+        status: { in: [ExtractionJobStatus.FAILED, ExtractionJobStatus.REJECTED] },
+        retryExpiresAt: { gt: new Date() },
+        cleanedUpAt: null,
+        inputImages: { some: {} },
+      },
+      data: {
+        status: ExtractionJobStatus.PENDING,
+        attemptCount: 0,
+        maxAttempts: env.EXTRACTION_MAX_ATTEMPTS,
+        nextAttemptAt: new Date(),
+        lastAttemptAt: null,
+        rawModelResponse: null,
+        providerResponseId: null,
+        extractedMenu: Prisma.DbNull,
+        confidenceScore: null,
+        warnings: [],
+        retryExpiresAt: null,
+        cleanedUpAt: null,
+        errors: [],
+        approvedAt: null,
+        rejectedAt: null,
+      },
+    });
+
+    if (reset.count === 0) {
+      throw new HttpError(409, 'errors.extractionRetryExpired');
+    }
+
+    return tx.extractionJob.findUniqueOrThrow({ where: { id: job.id } });
   });
   const menu = await prisma.menu.findUniqueOrThrow({
     where: { id: job.menuId },
     include: menuInclude,
   });
 
-  void triggerExtractionQueue();
+  scheduleExtractionQueue();
 
   return {
     job: retried,
@@ -572,7 +681,7 @@ export async function getLatestExtractionJob(
 ) {
   const { user } = await requireBranchAccess(session, branchId);
   await failStaleExtractionJobs({ venueId: user.venueId, branchId });
-  void triggerExtractionQueue();
+  scheduleExtractionQueue();
   const job = await prisma.extractionJob.findFirst({
     where: { branchId, venueId: user.venueId },
     orderBy: { createdAt: 'desc' },
@@ -590,7 +699,7 @@ export async function getExtractionJob(
   jobId: string,
 ) {
   const { user, job } = await requireJobForBranch(session, branchId, jobId);
-  void triggerExtractionQueue();
+  scheduleExtractionQueue();
 
   return {
     job,
@@ -782,8 +891,10 @@ export async function approveExtractionJob(
       where: { id: jobId },
       data: {
         status: ExtractionJobStatus.APPROVED,
-        extractedMenu: extractedMenu as Prisma.InputJsonValue,
         approvedAt: new Date(),
+        retryExpiresAt: null,
+        cleanedUpAt: new Date(),
+        ...terminalPayloadCleanup(),
         errors: [],
       },
     }),
@@ -813,6 +924,9 @@ export async function rejectExtractionJob(
     data: {
       status: ExtractionJobStatus.REJECTED,
       rejectedAt: new Date(),
+      retryExpiresAt: manualRetryExpiresAt(),
+      cleanedUpAt: null,
+      ...terminalPayloadCleanup(),
       errors: input.reason ? [input.reason] : job.errors,
     },
   });

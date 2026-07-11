@@ -64,6 +64,7 @@
     "extractionTimedOut": "Extraction took too long after several automatic retries. You can retry it without uploading the images again.",
     "extractionInterrupted": "Extraction was interrupted and has been resumed automatically.",
     "extractionInputsMissing": "The saved extraction images are unavailable. Please start a new extraction.",
+    "extractionRetryExpired": "The one-day retry window has expired. Please upload the images again.",
     "extractionApplyFailed": "The reviewed extraction could not be applied to this menu."
   },
   "logs": {

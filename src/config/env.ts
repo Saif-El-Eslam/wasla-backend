@@ -37,8 +37,12 @@ const envSchema = z.object({
   EXTRACTION_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
   EXTRACTION_RETRY_BASE_DELAY_MS: z.coerce.number().int().positive().default(5_000),
   EXTRACTION_WORKER_INTERVAL_MS: z.coerce.number().int().positive().default(10_000),
+  EXTRACTION_MANUAL_RETRY_WINDOW_MS: z.coerce.number().int().positive().default(86_400_000),
+  EXTRACTION_CLEANUP_INTERVAL_MS: z.coerce.number().int().positive().default(3_600_000),
+  EXTRACTION_MAINTENANCE_MAX_JOBS: z.coerce.number().int().positive().max(20).default(1),
   EXTRACTION_STALE_JOB_AFTER_MS: z.coerce.number().int().positive().default(330_000),
   EXTRACTION_STALE_SWEEP_INTERVAL_MS: z.coerce.number().int().positive().default(150_000),
+  CRON_SECRET: z.string().min(16).optional(),
 });
 
 export const env = envSchema.parse(process.env);

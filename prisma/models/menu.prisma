@@ -93,6 +93,8 @@ model ExtractionJob {
   maxAttempts      Int                 @default(3)
   nextAttemptAt    DateTime            @default(now())
   lastAttemptAt    DateTime?
+  retryExpiresAt   DateTime?
+  cleanedUpAt      DateTime?
   providerResponseId String?
   rawModelResponse String?
   extractedMenu    Json?
@@ -111,6 +113,7 @@ model ExtractionJob {
   @@index([branchId, createdAt])
   @@index([menuId, status])
   @@index([status, nextAttemptAt])
+  @@index([status, retryExpiresAt])
 }
 
 model ExtractionJobImage {
