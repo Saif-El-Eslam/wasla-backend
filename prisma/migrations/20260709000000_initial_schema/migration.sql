@@ -196,6 +196,13 @@ CREATE TABLE "ExtractionJob" (
     "modelProvider" TEXT NOT NULL DEFAULT 'google',
     "modelName" TEXT NOT NULL,
     "imageCount" INTEGER NOT NULL DEFAULT 0,
+    "attemptCount" INTEGER NOT NULL DEFAULT 0,
+    "maxAttempts" INTEGER NOT NULL DEFAULT 3,
+    "nextAttemptAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "lastAttemptAt" TIMESTAMP(3),
+    "retryExpiresAt" TIMESTAMP(3),
+    "cleanedUpAt" TIMESTAMP(3),
+    "providerResponseId" TEXT,
     "rawModelResponse" TEXT,
     "extractedMenu" JSONB,
     "confidenceScore" DOUBLE PRECISION,
@@ -207,6 +214,18 @@ CREATE TABLE "ExtractionJob" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "ExtractionJob_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ExtractionJobImage" (
+    "id" TEXT NOT NULL,
+    "jobId" TEXT NOT NULL,
+    "sortOrder" INTEGER NOT NULL,
+    "mimeType" TEXT NOT NULL,
+    "data" BYTEA NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "ExtractionJobImage_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -524,6 +543,18 @@ CREATE INDEX "ExtractionJob_branchId_createdAt_idx" ON "ExtractionJob"("branchId
 CREATE INDEX "ExtractionJob_menuId_status_idx" ON "ExtractionJob"("menuId", "status");
 
 -- CreateIndex
+CREATE INDEX "ExtractionJob_status_nextAttemptAt_idx" ON "ExtractionJob"("status", "nextAttemptAt");
+
+-- CreateIndex
+CREATE INDEX "ExtractionJob_status_retryExpiresAt_idx" ON "ExtractionJob"("status", "retryExpiresAt");
+
+-- CreateIndex
+CREATE INDEX "ExtractionJobImage_jobId_idx" ON "ExtractionJobImage"("jobId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ExtractionJobImage_jobId_sortOrder_key" ON "ExtractionJobImage"("jobId", "sortOrder");
+
+-- CreateIndex
 CREATE INDEX "MenuCategory_menuId_sortOrder_idx" ON "MenuCategory"("menuId", "sortOrder");
 
 -- CreateIndex
@@ -678,6 +709,9 @@ ALTER TABLE "GuestFeedback" ADD CONSTRAINT "GuestFeedback_menuId_fkey" FOREIGN K
 
 -- AddForeignKey
 ALTER TABLE "ExtractionJob" ADD CONSTRAINT "ExtractionJob_menuId_fkey" FOREIGN KEY ("menuId") REFERENCES "Menu"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ExtractionJobImage" ADD CONSTRAINT "ExtractionJobImage_jobId_fkey" FOREIGN KEY ("jobId") REFERENCES "ExtractionJob"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "MenuCategory" ADD CONSTRAINT "MenuCategory_menuId_fkey" FOREIGN KEY ("menuId") REFERENCES "Menu"("id") ON DELETE CASCADE ON UPDATE CASCADE;

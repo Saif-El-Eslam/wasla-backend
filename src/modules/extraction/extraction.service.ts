@@ -214,22 +214,21 @@ export async function cleanupExpiredExtractionJobs(now = new Date()) {
     ],
   };
 
-  const [images, jobs] = await prisma.$transaction([
-    prisma.extractionJobImage.deleteMany({
+  return prisma.$transaction(async (tx) => {
+    const images = await tx.extractionJobImage.deleteMany({
       where: { job: { is: purgeableJobs } },
-    }),
-    prisma.extractionJob.updateMany({
+    });
+    const jobs = await tx.extractionJob.updateMany({
       where: purgeableJobs,
       data: {
         ...terminalPayloadCleanup(),
         cleanedUpAt: now,
       },
-    }),
-  ]);
+    });
 
-  return { jobs: jobs.count, images: images.count };
+    return { jobs: jobs.count, images: images.count };
+  });
 }
-
 async function parseMenuImagesWithTimeout(jobId: string, images: UploadedImage[]) {
   const controller = new AbortController();
   let timeout: NodeJS.Timeout | undefined;
@@ -419,14 +418,17 @@ function triggerExtractionQueue(maxJobs = Number.POSITIVE_INFINITY) {
 function scheduleExtractionQueue() {
   const isVercel = Boolean(process.env.VERCEL);
   const maxJobs = isVercel ? env.EXTRACTION_MAINTENANCE_MAX_JOBS : Number.POSITIVE_INFINITY;
-  const queueWork = triggerExtractionQueue(maxJobs);
-
   if (isVercel) {
-    waitUntil(Promise.all([queueWork, cleanupExpiredExtractionJobs()]));
+    waitUntil(
+      (async () => {
+        await cleanupExpiredExtractionJobs();
+        await triggerExtractionQueue(maxJobs);
+      })(),
+    );
     return;
   }
 
-  void queueWork;
+  void triggerExtractionQueue(maxJobs);
 }
 export async function failStaleExtractionJobs(
   where: { venueId?: string; branchId?: string; jobId?: string } = {},
@@ -437,8 +439,8 @@ export async function failStaleExtractionJobs(
     branchId: where.branchId,
   };
 
-  const [requeued, exhausted, missingInputs] = await prisma.$transaction([
-    prisma.extractionJob.updateMany({
+  return prisma.$transaction(async (tx) => {
+    const requeued = await tx.extractionJob.updateMany({
       where: {
         ...scope,
         status: ExtractionJobStatus.PROCESSING,
@@ -451,8 +453,8 @@ export async function failStaleExtractionJobs(
         nextAttemptAt: new Date(),
         errors: ['errors.extractionInterrupted'],
       },
-    }),
-    prisma.extractionJob.updateMany({
+    });
+    const exhausted = await tx.extractionJob.updateMany({
       where: {
         ...scope,
         status: ExtractionJobStatus.PROCESSING,
@@ -466,8 +468,8 @@ export async function failStaleExtractionJobs(
         ...terminalPayloadCleanup(),
         errors: ['errors.extractionTimedOut'],
       },
-    }),
-    prisma.extractionJob.updateMany({
+    });
+    const missingInputs = await tx.extractionJob.updateMany({
       where: {
         ...scope,
         status: { in: [...ACTIVE_EXTRACTION_STATUSES] },
@@ -481,12 +483,11 @@ export async function failStaleExtractionJobs(
         ...terminalPayloadCleanup(),
         errors: ['errors.extractionInputsMissing'],
       },
-    }),
-  ]);
+    });
 
-  return { requeued: requeued.count, failed: exhausted.count + missingInputs.count };
+    return { requeued: requeued.count, failed: exhausted.count + missingInputs.count };
+  });
 }
-
 export async function runExtractionMaintenance() {
   const recovery = await failStaleExtractionJobs();
   const cleanup = await cleanupExpiredExtractionJobs();
@@ -507,7 +508,10 @@ export function startExtractionJobMaintenance() {
     await triggerExtractionQueue();
   };
 
-  void Promise.all([recoverAndDrain(), cleanupExpiredExtractionJobs()]).catch((error) => {
+  void (async () => {
+    await cleanupExpiredExtractionJobs();
+    await recoverAndDrain();
+  })().catch((error) => {
     console.error('[extraction] Failed to start extraction maintenance', error);
   });
 
@@ -886,8 +890,8 @@ export async function approveExtractionJob(
     throw new HttpError(400, 'errors.extractionApplyFailed');
   }
 
-  const [approvedJob] = await prisma.$transaction([
-    prisma.extractionJob.update({
+  const approvedJob = await prisma.$transaction(async (tx) => {
+    const approved = await tx.extractionJob.update({
       where: { id: jobId },
       data: {
         status: ExtractionJobStatus.APPROVED,
@@ -897,9 +901,12 @@ export async function approveExtractionJob(
         ...terminalPayloadCleanup(),
         errors: [],
       },
-    }),
-    prisma.extractionJobImage.deleteMany({ where: { jobId } }),
-  ]);
+    });
+
+    await tx.extractionJobImage.deleteMany({ where: { jobId } });
+
+    return approved;
+  });
 
   return {
     job: approvedJob,
