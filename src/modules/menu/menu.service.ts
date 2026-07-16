@@ -124,11 +124,15 @@ export async function getBranchMenu(session: SessionPayload | undefined, branchI
     include: managedMenuInclude,
   });
 
+  if (!menu) {
+    return null;
+  }
+
   const venue = await prisma.venue.findFirst({
     where: { branches: { some: { id: branchId } } },
   });
 
-  return { ...(await addMenuAnalyticsSnapshot(menu)), venue: venue };
+  return { ...(await addMenuAnalyticsSnapshot(menu)), venue };
 }
 
 export async function createBranchMenu(

@@ -43,6 +43,7 @@ export async function getMyVenue(session?: SessionPayload) {
 
 export async function setupVenue(session: SessionPayload | undefined, input: z.infer<typeof setupVenueSchema>) {
   const userId = requireUserId(session);
+  const shortCode = crypto.randomUUID().slice(0, 8);
 
   const existingUser = await prisma.user.findUnique({
     where: { id: userId },
@@ -89,6 +90,18 @@ export async function setupVenue(session: SessionPayload | undefined, input: z.i
             googleMapsUrl: input.googleMapsUrl || null,
             instagramUrl: input.instagramUrl || null,
             facebookUrl: input.facebookUrl || null,
+            menu: {
+              create: {
+                theme: 'MODERN',
+                showPrices: true,
+                qrCode: {
+                  create: {
+                    shortCode,
+                    targetUrl: `/public/m/${shortCode}`,
+                  },
+                },
+              },
+            },
           },
         },
       },
