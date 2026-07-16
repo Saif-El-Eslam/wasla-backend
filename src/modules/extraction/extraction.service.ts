@@ -794,61 +794,59 @@ async function upsertExtractedItems(
   }
 }
 
-async function applyExtractionToMenu(menu: MenuWithContent, extractedMenu: ExtractedMenu) {
-  await prisma.$transaction(
-    async (tx) => {
-      await tx.menu.update({
-        where: { id: menu.id },
-        data: {
-          theme: extractedMenu.menu.theme,
-          showPrices: extractedMenu.menu.showPrices,
-        },
-      });
-
-      for (const [index, category] of extractedMenu.categories.entries()) {
-        const matchedCategory = categoryMatch(menu, category);
-        const categoryData = {
-          name: jsonOrUndefined(category.name),
-          description: jsonOrUndefined(category.description),
-          imageUrl: normalizeImageUrl(category.imageUrl),
-          active: category.active,
-          sortOrder:
-            category.sortOrder ?? matchedCategory?.sortOrder ?? menu.categories.length + index,
-        };
-
-        if (matchedCategory) {
-          await tx.menuCategory.update({
-            where: { id: matchedCategory.id },
-            data: categoryData,
-          });
-          await upsertExtractedItems(tx, matchedCategory, category.items);
-          continue;
-        }
-
-        const createdCategory = await tx.menuCategory.create({
-          data: {
-            menuId: menu.id,
-            name: category.name as Prisma.InputJsonValue,
-            description: jsonOrUndefined(category.description),
-            imageUrl: normalizeImageUrl(category.imageUrl),
-            active: category.active,
-            sortOrder: category.sortOrder ?? menu.categories.length + index,
-          },
-          include: {
-            items: {
-              include: {
-                prices: true,
-              },
-            },
-          },
-        });
-        await upsertExtractedItems(tx, createdCategory, category.items);
-      }
+async function applyExtractionToMenu(
+  tx: Prisma.TransactionClient,
+  menu: MenuWithContent,
+  extractedMenu: ExtractedMenu,
+) {
+  await tx.menu.update({
+    where: { id: menu.id },
+    data: {
+      theme: extractedMenu.menu.theme,
+      showPrices: extractedMenu.menu.showPrices,
     },
-    { timeout: 30000 },
-  );
+  });
 
-  return prisma.menu.findUniqueOrThrow({
+  for (const [index, category] of extractedMenu.categories.entries()) {
+    const matchedCategory = categoryMatch(menu, category);
+    const categoryData = {
+      name: jsonOrUndefined(category.name),
+      description: jsonOrUndefined(category.description),
+      imageUrl: normalizeImageUrl(category.imageUrl),
+      active: category.active,
+      sortOrder: category.sortOrder ?? matchedCategory?.sortOrder ?? menu.categories.length + index,
+    };
+
+    if (matchedCategory) {
+      await tx.menuCategory.update({
+        where: { id: matchedCategory.id },
+        data: categoryData,
+      });
+      await upsertExtractedItems(tx, matchedCategory, category.items);
+      continue;
+    }
+
+    const createdCategory = await tx.menuCategory.create({
+      data: {
+        menuId: menu.id,
+        name: category.name as Prisma.InputJsonValue,
+        description: jsonOrUndefined(category.description),
+        imageUrl: normalizeImageUrl(category.imageUrl),
+        active: category.active,
+        sortOrder: category.sortOrder ?? menu.categories.length + index,
+      },
+      include: {
+        items: {
+          include: {
+            prices: true,
+          },
+        },
+      },
+    });
+    await upsertExtractedItems(tx, createdCategory, category.items);
+  }
+
+  return tx.menu.findUniqueOrThrow({
     where: { id: menu.id },
     include: menuInclude,
   });
@@ -882,36 +880,42 @@ export async function approveExtractionJob(
     throw new HttpError(404, 'errors.menuNotFound');
   }
 
-  let updatedMenu: MenuWithContent;
-
   try {
-    updatedMenu = await applyExtractionToMenu(menu, extractedMenu);
-  } catch {
+    return await prisma.$transaction(
+      async (tx) => {
+        const claimed = await tx.extractionJob.updateMany({
+          where: { id: jobId, status: ExtractionJobStatus.COMPLETED },
+          data: { status: ExtractionJobStatus.APPROVED, approvedAt: new Date() },
+        });
+
+        if (claimed.count === 0) {
+          throw new HttpError(409, 'errors.extractionApproveNotAllowed');
+        }
+
+        const updatedMenu = await applyExtractionToMenu(tx, menu, extractedMenu);
+        const approvedJob = await tx.extractionJob.update({
+          where: { id: jobId },
+          data: {
+            retryExpiresAt: null,
+            cleanedUpAt: new Date(),
+            ...terminalPayloadCleanup(),
+            errors: [],
+          },
+        });
+
+        await tx.extractionJobImage.deleteMany({ where: { jobId } });
+
+        return { job: approvedJob, menu: updatedMenu };
+      },
+      { timeout: 30000 },
+    );
+  } catch (error) {
+    if (error instanceof HttpError) {
+      throw error;
+    }
+
     throw new HttpError(400, 'errors.extractionApplyFailed');
   }
-
-  const approvedJob = await prisma.$transaction(async (tx) => {
-    const approved = await tx.extractionJob.update({
-      where: { id: jobId },
-      data: {
-        status: ExtractionJobStatus.APPROVED,
-        approvedAt: new Date(),
-        retryExpiresAt: null,
-        cleanedUpAt: new Date(),
-        ...terminalPayloadCleanup(),
-        errors: [],
-      },
-    });
-
-    await tx.extractionJobImage.deleteMany({ where: { jobId } });
-
-    return approved;
-  });
-
-  return {
-    job: approvedJob,
-    menu: updatedMenu,
-  };
 }
 
 export async function rejectExtractionJob(

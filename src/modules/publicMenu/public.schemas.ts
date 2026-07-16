@@ -21,11 +21,31 @@ export const publicShortCodeParamsSchema = z.object({
   code: z.string().trim().min(3).max(32),
 });
 
-export const publicAnalyticsEventSchema = z.object({
-  eventType: z.enum(AnalyticsEventType),
-  venueId: z.uuid(),
-  branchId: z.uuid().optional(),
-  menuId: z.uuid().optional(),
-  categoryId: z.uuid().optional(),
-  itemId: z.uuid().optional(),
-});
+export const publicAnalyticsEventSchema = z
+  .object({
+    eventType: z.enum(AnalyticsEventType),
+    venueId: z.uuid(),
+    branchId: z.uuid().optional(),
+    menuId: z.uuid().optional(),
+    categoryId: z.uuid().optional(),
+    itemId: z.uuid().optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.eventType !== AnalyticsEventType.VENUE_VIEW && (!value.branchId || !value.menuId)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'branchId and menuId are required for menu analytics events',
+      });
+    }
+
+    if (value.eventType === AnalyticsEventType.CATEGORY_VIEW && !value.categoryId) {
+      context.addIssue({ code: 'custom', message: 'categoryId is required for category views' });
+    }
+
+    if (value.eventType === AnalyticsEventType.ITEM_VIEW && (!value.categoryId || !value.itemId)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'categoryId and itemId are required for item views',
+      });
+    }
+  });

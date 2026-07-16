@@ -158,14 +158,17 @@ export async function updateMyVenue(session: SessionPayload | undefined, input: 
     },
   });
 
-  await deleteImagesByUrl([
-    input.logoUrl !== undefined && imageUrlChanged(currentVenue.logoUrl, updatedVenue.logoUrl)
-      ? currentVenue.logoUrl
-      : null,
-    input.coverUrl !== undefined && imageUrlChanged(currentVenue.coverUrl, updatedVenue.coverUrl)
-      ? currentVenue.coverUrl
-      : null,
-  ]);
+  await deleteImagesByUrl(
+    [
+      input.logoUrl !== undefined && imageUrlChanged(currentVenue.logoUrl, updatedVenue.logoUrl)
+        ? currentVenue.logoUrl
+        : null,
+      input.coverUrl !== undefined && imageUrlChanged(currentVenue.coverUrl, updatedVenue.coverUrl)
+        ? currentVenue.coverUrl
+        : null,
+    ],
+    { venueId: user.venueId },
+  );
 
   return updatedVenue;
 }

@@ -12,20 +12,34 @@ async function bootstrap() {
     console.log(translate('en', 'logs.serverStarted', { port: env.PORT, prefix: env.API_PREFIX }));
   });
 
+  let shuttingDown = false;
+
   async function shutdown(signal: string) {
+    if (shuttingDown) {
+      return;
+    }
+
+    shuttingDown = true;
     console.log(`${signal} received, shutting down`);
     stopExtractionJobMaintenance();
-    server.close(async () => {
+    const forcedShutdown = setTimeout(() => {
+      console.error('Graceful shutdown timed out');
+      process.exit(1);
+    }, 10_000);
+    forcedShutdown.unref();
+
+    server.close(async (error) => {
+      clearTimeout(forcedShutdown);
       await disconnectDatabase();
-      process.exit(0);
+      process.exit(error ? 1 : 0);
     });
   }
 
-  process.on('SIGINT', () => {
+  process.once('SIGINT', () => {
     void shutdown('SIGINT');
   });
 
-  process.on('SIGTERM', () => {
+  process.once('SIGTERM', () => {
     void shutdown('SIGTERM');
   });
 }

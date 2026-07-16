@@ -6,7 +6,6 @@ import {
   deleteBranch,
   getBranch,
   getBranchesOverview,
-  getBranchQr,
   listBranches,
   listBranchOptions,
   listManagementBranches,
@@ -33,11 +32,6 @@ export const listBranchesController = asyncHandler(async (req, res) => {
 
 export const getBranchesOverviewController = asyncHandler(async (req, res) => {
   const result = await getBranchesOverview(req.user);
-  ok(res, localizeResponse(result, req.locale));
-});
-
-export const getBranchQrController = asyncHandler(async (req, res) => {
-  const result = await getBranchQr(req.user, String(req.params.branchId));
   ok(res, localizeResponse(result, req.locale));
 });
 

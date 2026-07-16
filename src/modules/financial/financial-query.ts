@@ -1,6 +1,5 @@
 import { FinancialTransactionType, Prisma } from '@prisma/client';
 import { branchScopeWhere, requireAccessUser, requireBranchAccess } from '../../common/auth/branch-access';
-import type { SessionPayload } from '../../common/middleware/auth.middleware';
 import { endOfDayInZone, startOfMonthInZone } from '../../common/timezone';
 import { prisma } from '../../database/prisma';
 import type { z } from 'zod';

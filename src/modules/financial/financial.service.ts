@@ -215,6 +215,16 @@ function insightMessages(
   return insights.slice(0, 4);
 }
 
+function assertTransactionDateAllowed(occurredAt: Date) {
+  if (occurredAt.getTime() > Date.now()) {
+    throw new HttpError(400, 'errors.invalidTransactionDate');
+  }
+
+  if (occurredAt.getTime() < Date.now() - 1000 * 60 * 60 * 24 * 7) {
+    throw new HttpError(400, 'errors.oldTransactionDate');
+  }
+}
+
 export async function getFinanceAccess(session?: SessionPayload) {
   const user = await requireAccessUser(session);
   const allowance = await getFinanceAllowance(user.venueId);
@@ -293,13 +303,7 @@ export async function createFinancialTransaction(
     throw new HttpError(400, 'errors.invalidFinancialBranch');
   }
 
-  if (input.occurredAt.getTime() > Date.now()) {
-    throw new HttpError(400, 'errors.invalidTransactionDate');
-  }
-
-  if (input.occurredAt.getTime() < Date.now() - 1000 * 60 * 60 * 24 * 7) {
-    throw new HttpError(400, 'errors.oldTransactionDate');
-  }
+  assertTransactionDateAllowed(input.occurredAt);
 
   const transaction = await prisma.$transaction(async (tx) => {
     const created = await tx.financialTransaction.create({
@@ -356,8 +360,8 @@ export async function updateFinancialTransaction(
     throw new HttpError(400, 'errors.invalidFinancialBranch');
   }
 
-  if (input.occurredAt && input.occurredAt.getTime() > Date.now()) {
-    throw new HttpError(400, 'errors.invalidTransactionDate');
+  if (input.occurredAt) {
+    assertTransactionDateAllowed(input.occurredAt);
   }
 
   const updated = await prisma.$transaction(async (tx) => {

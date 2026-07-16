@@ -268,36 +268,6 @@ export async function listManagementBranches(session?: SessionPayload) {
   };
 }
 
-export async function getBranchQr(session: SessionPayload | undefined, branchId: string) {
-  const { branch } = await requireBranchAccess(session, branchId);
-  const venue = await prisma.venue.findUnique({
-    where: { id: branch.venueId },
-    select: { slug: true },
-  });
-  const menu = await prisma.menu.findUnique({
-    where: { branchId },
-    select: {
-      id: true,
-      publishedAt: true,
-      qrCode: true,
-    },
-  });
-  const statsByMenuId = menu ? await analyticsStatsByMenuIds([menu.id]) : new Map();
-
-  return {
-    branch: {
-      id: branch.id,
-      name: branch.name,
-      slug: branch.slug,
-      phone: branch.phone,
-      venueSlug: venue?.slug ?? null,
-    },
-    menu: menu
-      ? { ...menu, analytics: menuAnalyticsSnapshot(menu.id, statsByMenuId.get(menu.id)) }
-      : menu,
-  };
-}
-
 export async function getBranch(session: SessionPayload | undefined, branchId: string) {
   const branch = await prisma.branch.findFirst({
     where: {
@@ -398,14 +368,17 @@ export async function updateBranch(
     },
   });
 
-  await deleteImagesByUrl([
-    input.logoUrl !== undefined && imageUrlChanged(branch.logoUrl, updatedBranch.logoUrl)
-      ? branch.logoUrl
-      : null,
-    input.coverUrl !== undefined && imageUrlChanged(branch.coverUrl, updatedBranch.coverUrl)
-      ? branch.coverUrl
-      : null,
-  ]);
+  await deleteImagesByUrl(
+    [
+      input.logoUrl !== undefined && imageUrlChanged(branch.logoUrl, updatedBranch.logoUrl)
+        ? branch.logoUrl
+        : null,
+      input.coverUrl !== undefined && imageUrlChanged(branch.coverUrl, updatedBranch.coverUrl)
+        ? branch.coverUrl
+        : null,
+    ],
+    { venueId },
+  );
 
   return updatedBranch;
 }
@@ -490,26 +463,32 @@ export async function deleteBranch(session: SessionPayload | undefined, branchId
       prisma.branch.update({ where: { id: replacement.id }, data: { isMain: true, active: true } }),
     ]);
 
-    await deleteImagesByUrl([
+    await deleteImagesByUrl(
+      [
+        branch.logoUrl,
+        branch.coverUrl,
+        ...(branch.menu?.categories.map((category) => category.imageUrl) ?? []),
+        ...(branch.menu?.categories.flatMap((category) =>
+          category.items.map((item) => item.imageUrl),
+        ) ?? []),
+      ],
+      { venueId },
+    );
+
+    return { deleted: true };
+  }
+
+  await prisma.branch.delete({ where: { id: branchId } });
+  await deleteImagesByUrl(
+    [
       branch.logoUrl,
       branch.coverUrl,
       ...(branch.menu?.categories.map((category) => category.imageUrl) ?? []),
       ...(branch.menu?.categories.flatMap((category) =>
         category.items.map((item) => item.imageUrl),
       ) ?? []),
-    ]);
-
-    return { deleted: true };
-  }
-
-  await prisma.branch.delete({ where: { id: branchId } });
-  await deleteImagesByUrl([
-    branch.logoUrl,
-    branch.coverUrl,
-    ...(branch.menu?.categories.map((category) => category.imageUrl) ?? []),
-    ...(branch.menu?.categories.flatMap((category) =>
-      category.items.map((item) => item.imageUrl),
-    ) ?? []),
-  ]);
+    ],
+    { venueId },
+  );
   return { deleted: true };
 }

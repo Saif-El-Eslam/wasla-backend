@@ -9,7 +9,6 @@ import {
   deleteBranchController,
   getBranchesOverviewController,
   getBranchController,
-  getBranchQrController,
   listBranchesController,
   setMainBranchController,
   updateBranchController,
@@ -22,7 +21,6 @@ branchRouter.use(requireAuth, authenticatedRateLimit);
 branchRouter.get('/overview', getBranchesOverviewController);
 branchRouter.get('/', paginationMiddleware, validateRequest({ query: branchListQuerySchema }), listBranchesController);
 branchRouter.post('/', validateRequest({ body: createBranchSchema }), createBranchController);
-branchRouter.get('/:branchId/qr', validateRequest({ params: branchParamsSchema }), getBranchQrController);
 branchRouter.get('/:branchId', validateRequest({ params: branchParamsSchema }), getBranchController);
 branchRouter.patch(
   '/:branchId',

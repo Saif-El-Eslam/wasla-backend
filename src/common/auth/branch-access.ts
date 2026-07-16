@@ -26,6 +26,7 @@ export async function requireAccessUser(session?: SessionPayload): Promise<Curre
       id: true,
       venueId: true,
       role: true,
+      phoneVerifiedAt: true,
       branchAccesses: {
         select: { branchId: true },
       },
@@ -34,6 +35,10 @@ export async function requireAccessUser(session?: SessionPayload): Promise<Curre
 
   if (!user?.venueId) {
     throw new HttpError(404, 'errors.venueRequired');
+  }
+
+  if (!user.phoneVerifiedAt) {
+    throw new HttpError(401, 'errors.phoneNotVerified');
   }
 
   return {

@@ -117,7 +117,7 @@ function cloudinaryPublicIdFromUrl(imageUrl: string) {
 
 export async function deleteImageByUrl(
   imageUrl: string | null | undefined,
-  options: { venueId?: string } = {},
+  options: { venueId: string },
 ) {
   if (!imageUrl) {
     return;
@@ -130,7 +130,7 @@ export async function deleteImageByUrl(
     return;
   }
 
-  if (options.venueId && !publicId.startsWith(`wasla/${options.venueId}/`)) {
+  if (!publicId.startsWith(`wasla/${options.venueId}/`)) {
     return;
   }
 
@@ -163,10 +163,13 @@ export async function deleteImageByUrl(
   }
 }
 
-export async function deleteImagesByUrl(imageUrls: Array<string | null | undefined>) {
+export async function deleteImagesByUrl(
+  imageUrls: Array<string | null | undefined>,
+  options: { venueId: string },
+) {
   const uniqueUrls = Array.from(new Set(imageUrls.filter(Boolean)));
 
-  await Promise.all(uniqueUrls.map((url) => deleteImageByUrl(url)));
+  await Promise.all(uniqueUrls.map((url) => deleteImageByUrl(url, options)));
 }
 
 export function imageUrlChanged(previousUrl: string | null | undefined, nextUrl: string | null | undefined) {

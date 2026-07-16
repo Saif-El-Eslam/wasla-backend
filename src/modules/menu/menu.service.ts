@@ -52,7 +52,7 @@ async function requireBranchMenu(session: SessionPayload | undefined, branchId: 
     throw new HttpError(404, 'errors.menuNotFound');
   }
 
-  return menu;
+  return { ...menu, venueId: user.venueId };
 }
 
 async function requireCategory(menuId: string, categoryId: string) {
@@ -189,11 +189,14 @@ export async function deleteBranchMenu(session: SessionPayload | undefined, bran
   });
 
   await prisma.menu.delete({ where: { id: menu.id } });
-  await deleteImagesByUrl([
-    ...(menuImages?.categories.map((category) => category.imageUrl) ?? []),
-    ...(menuImages?.categories.flatMap((category) => category.items.map((item) => item.imageUrl)) ??
-      []),
-  ]);
+  await deleteImagesByUrl(
+    [
+      ...(menuImages?.categories.map((category) => category.imageUrl) ?? []),
+      ...(menuImages?.categories.flatMap((category) => category.items.map((item) => item.imageUrl)) ??
+        []),
+    ],
+    { venueId: menu.venueId },
+  );
   return { deleted: true };
 }
 
@@ -265,7 +268,7 @@ export async function updateCategory(
     input.imageUrl !== undefined &&
     imageUrlChanged(existingCategory.imageUrl, category.imageUrl)
   ) {
-    await deleteImageByUrl(existingCategory.imageUrl);
+    await deleteImageByUrl(existingCategory.imageUrl, { venueId: menu.venueId });
   }
 
   return category;
@@ -287,7 +290,10 @@ export async function deleteCategory(
   }
 
   await prisma.menuCategory.delete({ where: { id: categoryId } });
-  await deleteImagesByUrl([category.imageUrl, ...category.items.map((item) => item.imageUrl)]);
+  await deleteImagesByUrl(
+    [category.imageUrl, ...category.items.map((item) => item.imageUrl)],
+    { venueId: menu.venueId },
+  );
   return { deleted: true };
 }
 
@@ -371,7 +377,7 @@ export async function updateItem(
   });
 
   if (input.imageUrl !== undefined && imageUrlChanged(existingItem.imageUrl, item.imageUrl)) {
-    await deleteImageByUrl(existingItem.imageUrl);
+    await deleteImageByUrl(existingItem.imageUrl, { venueId: menu.venueId });
   }
 
   return item;
@@ -387,7 +393,7 @@ export async function deleteItem(
   await requireCategory(menu.id, categoryId);
   const item = await requireItem(categoryId, itemId);
   await prisma.menuItem.delete({ where: { id: itemId } });
-  await deleteImageByUrl(item.imageUrl);
+  await deleteImageByUrl(item.imageUrl, { venueId: menu.venueId });
   return { deleted: true };
 }
 

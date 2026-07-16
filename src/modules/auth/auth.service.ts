@@ -36,6 +36,32 @@ type SanitizableUser = Pick<
   }>;
 };
 
+const currentUserSelect = Prisma.validator<Prisma.UserSelect>()({
+  id: true,
+  venueId: true,
+  phone: true,
+  email: true,
+  name: true,
+  role: true,
+  phoneVerifiedAt: true,
+  createdAt: true,
+  updatedAt: true,
+  branchAccesses: {
+    include: {
+      branch: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          isMain: true,
+          active: true,
+        },
+      },
+    },
+    orderBy: { createdAt: 'asc' },
+  },
+});
+
 function sanitizeUser(user: SanitizableUser) {
   return {
     id: user.id,
@@ -106,8 +132,13 @@ function decryptDeliveryCode(value: string | null | undefined) {
 type OtpCodeWriter = Pick<Prisma.TransactionClient, 'otpCode'>;
 
 async function createOtpCode(userId: string, code?: string, db: OtpCodeWriter = prisma) {
-  const plainCode = code ?? String(Math.floor(100000 + Math.random() * 900000));
+  const plainCode = code ?? String(crypto.randomInt(100000, 1000000));
   const codeHash = await bcrypt.hash(plainCode, 10);
+
+  await db.otpCode.updateMany({
+    where: { userId, purpose: 'PHONE_VERIFY', consumedAt: null },
+    data: { consumedAt: new Date(), deliveryCodeEncrypted: null },
+  });
 
   await db.otpCode.create({
     data: {
@@ -130,15 +161,18 @@ export async function register(input: { name: string; phone: string; password: s
   }
 
   const passwordHash = await bcrypt.hash(input.password, 12);
-  const user = await prisma.user.create({
-    data: {
-      name: input.name,
-      phone: input.phone,
-      passwordHash,
-    },
-  });
+  const { user, devOtp } = await prisma.$transaction(async (tx) => {
+    const user = await tx.user.create({
+      data: {
+        name: input.name,
+        phone: input.phone,
+        passwordHash,
+      },
+    });
+    const devOtp = await createOtpCode(user.id, undefined, tx);
 
-  const devOtp = await createOtpCode(user.id);
+    return { user, devOtp };
+  });
 
   return {
     user: sanitizeUser(user),
@@ -168,9 +202,13 @@ export async function login(input: { phone: string; password: string }) {
     venueId: user.venueId ?? undefined,
     role: user.role,
   });
+  const sessionUser = await prisma.user.findUniqueOrThrow({
+    where: { id: user.id },
+    select: currentUserSelect,
+  });
 
   return {
-    user: sanitizeUser(user),
+    user: sanitizeUser(sessionUser),
     token,
   };
 }
@@ -206,14 +244,19 @@ export async function verifyOtp(input: { phone: string; code: string }) {
   }
 
   const verifiedUser = await prisma.$transaction(async (tx) => {
-    await tx.otpCode.update({
-      where: { id: otp.id },
+    const consumed = await tx.otpCode.updateMany({
+      where: { id: otp.id, consumedAt: null, expiresAt: { gt: new Date() } },
       data: { consumedAt: new Date(), deliveryCodeEncrypted: null },
     });
+
+    if (consumed.count === 0) {
+      throw new HttpError(400, 'errors.otpInvalid');
+    }
 
     return tx.user.update({
       where: { id: user.id },
       data: { phoneVerifiedAt: user.phoneVerifiedAt ?? new Date() },
+      select: currentUserSelect,
     });
   });
 
@@ -385,11 +428,11 @@ export async function regenerateAdminVerificationCode(
 export async function resendOtp(input: { phone: string }) {
   const user = await prisma.user.findUnique({ where: { phone: input.phone } });
 
-  if (!user) {
-    throw new HttpError(404, 'errors.userNotFound');
+  if (!user || user.phoneVerifiedAt) {
+    return { sent: true };
   }
 
-  const devOtp = await createOtpCode(user.id);
+  const devOtp = await prisma.$transaction((tx) => createOtpCode(user.id, undefined, tx));
 
   return {
     sent: true,
@@ -404,31 +447,7 @@ export async function getCurrentUser(session?: SessionPayload) {
 
   const user = await prisma.user.findUnique({
     where: { id: session.sub },
-    select: {
-      id: true,
-      venueId: true,
-      phone: true,
-      email: true,
-      name: true,
-      role: true,
-      phoneVerifiedAt: true,
-      createdAt: true,
-      updatedAt: true,
-      branchAccesses: {
-        include: {
-          branch: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-              isMain: true,
-              active: true,
-            },
-          },
-        },
-        orderBy: { createdAt: 'asc' },
-      },
-    },
+    select: currentUserSelect,
   });
 
   if (!user) {
@@ -450,7 +469,18 @@ export async function updateCurrentUser(
     throw new HttpError(401, 'errors.authRequired');
   }
 
-  if (input.phone) {
+  const currentUser = await prisma.user.findUnique({
+    where: { id: session.sub },
+    select: { id: true, phone: true },
+  });
+
+  if (!currentUser) {
+    throw new HttpError(401, 'errors.userNotFound');
+  }
+
+  const phoneChanged = Boolean(input.phone && input.phone !== currentUser.phone);
+
+  if (phoneChanged && input.phone) {
     const existingUser = await prisma.user.findFirst({
       where: {
         phone: input.phone,
@@ -463,15 +493,26 @@ export async function updateCurrentUser(
     }
   }
 
-  const user = await prisma.user.update({
-    where: { id: session.sub },
-    data: {
-      name: input.name,
-      phone: input.phone,
-    },
+  const { user, devOtp } = await prisma.$transaction(async (tx) => {
+    const user = await tx.user.update({
+      where: { id: session.sub },
+      data: {
+        name: input.name,
+        phone: phoneChanged ? input.phone : undefined,
+        phoneVerifiedAt: phoneChanged ? null : undefined,
+      },
+      select: currentUserSelect,
+    });
+    const devOtp = phoneChanged ? await createOtpCode(user.id, undefined, tx) : undefined;
+
+    return { user, devOtp };
   });
 
-  return sanitizeUser(user);
+  return {
+    user: sanitizeUser(user),
+    verificationRequired: phoneChanged,
+    devOtp: env.NODE_ENV === 'production' ? undefined : devOtp,
+  };
 }
 
 export async function updateCurrentUserPassword(
@@ -498,6 +539,7 @@ export async function updateCurrentUserPassword(
   const updatedUser = await prisma.user.update({
     where: { id: user.id },
     data: { passwordHash },
+    select: currentUserSelect,
   });
 
   return sanitizeUser(updatedUser);

@@ -87,8 +87,7 @@ export const meController = asyncHandler(async (req, res) => {
 });
 
 export const updateMeController = asyncHandler(async (req, res) => {
-  const user = await updateCurrentUser(req.user, req.body);
-  ok(res, { user });
+  ok(res, await updateCurrentUser(req.user, req.body));
 });
 
 export const updatePasswordController = asyncHandler(async (req, res) => {
