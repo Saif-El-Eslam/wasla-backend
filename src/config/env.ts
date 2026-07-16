@@ -1,6 +1,11 @@
 import 'dotenv/config';
 import { z } from 'zod';
 
+const optionalIntegrationFlag = z
+  .enum(['true', 'false'])
+  .default('false')
+  .transform((value) => value === 'true');
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
@@ -43,6 +48,20 @@ const envSchema = z.object({
   EXTRACTION_STALE_JOB_AFTER_MS: z.coerce.number().int().positive().default(330_000),
   EXTRACTION_STALE_SWEEP_INTERVAL_MS: z.coerce.number().int().positive().default(150_000),
   CRON_SECRET: z.string().min(16).optional(),
+  WHATSAPP_ENABLED: optionalIntegrationFlag,
+  WHATSAPP_ACCESS_TOKEN: z.string().min(1).optional(),
+  WHATSAPP_PHONE_NUMBER_ID: z.string().min(1).optional(),
+  WHATSAPP_GRAPH_API_VERSION: z.string().regex(/^v\d+\.\d+$/).optional(),
+  WHATSAPP_API_BASE_URL: z.url().default('https://graph.facebook.com'),
+  WHATSAPP_APP_SECRET: z.string().min(1).optional(),
+  WHATSAPP_VERIFY_TOKEN: z.string().min(16).optional(),
+  WHATSAPP_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+  PAYMOB_ENABLED: optionalIntegrationFlag,
+  PAYMOB_SECRET_KEY: z.string().min(1).optional(),
+  PAYMOB_PUBLIC_KEY: z.string().min(1).optional(),
+  PAYMOB_HMAC_SECRET: z.string().min(1).optional(),
+  PAYMOB_API_BASE_URL: z.url().default('https://accept.paymob.com'),
+  PAYMOB_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
 });
 
 export const env = envSchema.parse(process.env);
